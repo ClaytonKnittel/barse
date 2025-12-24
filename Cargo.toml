@@ -16,4 +16,3 @@ inherits = "release"
 opt-level = 3
 debug = 2
 strip = "none"
-force-frame-pointers = true
