@@ -116,6 +116,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "itertools",
+ "libc",
+ "memmap2",
  "pprof",
 ]
 

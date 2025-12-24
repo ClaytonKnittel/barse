@@ -1,14 +1,9 @@
-use std::{
-  cmp::Ordering,
-  collections::HashMap,
-  fmt::Display,
-  fs::File,
-  io::{BufRead, BufReader},
-};
+use std::{cmp::Ordering, collections::HashMap, ffi::c_void, fmt::Display, fs::File};
 
 use itertools::Itertools;
+use memmap2::{Advice, MmapOptions};
 
-use crate::error::{BarseError, BarseResult};
+use crate::error::BarseResult;
 
 struct TemperatureSummary {
   min: f32,
@@ -87,23 +82,49 @@ impl Display for WeatherStation {
   }
 }
 
+fn char_offset(buffer: *const u8, needle: u8, len: usize) -> usize {
+  let semicolon = unsafe { libc::memchr(buffer as *const c_void, needle as i32, len) } as *const u8;
+  unsafe { semicolon.offset_from(buffer) as usize }
+}
+
+fn parse_lines_from_buffer(mut buffer: &[u8]) -> impl Iterator<Item = (&str, f32)> {
+  const MAX_WEATHER_STATION_LEN: usize = 50;
+
+  std::iter::from_fn(move || {
+    if buffer.is_empty() {
+      return None;
+    }
+
+    let semicolon_offset = char_offset(buffer.as_ptr(), b';', MAX_WEATHER_STATION_LEN + 1);
+    let newline_offset =
+      semicolon_offset + 1 + char_offset(buffer[semicolon_offset + 1..].as_ptr(), b'\n', 6);
+
+    let station = unsafe { str::from_utf8_unchecked(&buffer[..semicolon_offset]) };
+    let temp = unsafe {
+      str::from_utf8_unchecked(&buffer[semicolon_offset + 1..newline_offset])
+        .parse()
+        .unwrap_unchecked()
+    };
+
+    buffer = &buffer[newline_offset + 1..];
+
+    Some((station, temp))
+  })
+}
+
 pub fn temperature_reading_summaries(
   input_path: &str,
 ) -> BarseResult<impl Iterator<Item = WeatherStation>> {
+  let file = File::open(input_path)?;
+  let map = unsafe { MmapOptions::new().map(&file) }?;
+  map.advise(Advice::Sequential)?;
+
   Ok(
-    BufReader::new(File::open(input_path)?)
-      .lines()
+    parse_lines_from_buffer(&map)
       .try_fold(
         HashMap::<String, TemperatureSummary>::new(),
-        |mut map, line| -> BarseResult<_> {
-          let line = line?;
-          let (station, temp) = line
-            .split_once(';')
-            .ok_or_else(|| BarseError::new(format!("No ';' found in \"{line}\"")))?;
-          map
-            .entry(station.to_owned())
-            .or_default()
-            .add_reading(temp.parse()?);
+        |mut map, (station, temp)| -> BarseResult<_> {
+          map.entry(station.to_owned()).or_default().add_reading(temp);
           Ok(map)
         },
       )?
