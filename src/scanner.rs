@@ -211,4 +211,31 @@ mod tests {
     );
     expect_that!(scanner.next(), none());
   }
+
+  #[gtest]
+  fn test_iter_two_spans() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'A', b'b', b'c', b'd', b'e', b'f', b'g', b';', b'2', b'0', b'.', b'8', b'\n', //
+        b'H', b'i', b'j', b'k', b'l', b'm', b';', b'-', b'9', b'8', b'.', b'7', b'\n', //
+        b'N', b'o', b'p', b'q', b'r', b's', b't', b'u', b';', b'1', b'.', b'2', b'\n', //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("Abcdefg"), eq(TemperatureReading::new(208))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Hijklm"), eq(TemperatureReading::new(-987))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Nopqrstu"), eq(TemperatureReading::new(12))))
+    );
+    expect_that!(scanner.next(), none());
+  }
 }
