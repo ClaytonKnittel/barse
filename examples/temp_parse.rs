@@ -67,7 +67,22 @@ fn run() -> BarseResult {
 }
 
 fn main() -> ExitCode {
-  if let Err(err) = run() {
+  #[cfg(feature = "profiled")]
+  let guard = pprof::ProfilerGuardBuilder::default()
+    .frequency(1000)
+    .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+    .build()
+    .unwrap();
+
+  let res = run();
+
+  #[cfg(feature = "profiled")]
+  if let Ok(report) = guard.report().build() {
+    let file = std::fs::File::create("temp_parse_magic_search.svg").unwrap();
+    report.flamegraph(file).unwrap();
+  };
+
+  if let Err(err) = res {
     println!("{err}");
     ExitCode::FAILURE
   } else {
