@@ -63,7 +63,7 @@ const fn build_parse_table() -> [TemperatureReading; PARSE_TABLE_SIZE] {
 
 const PARSE_TABLE: [TemperatureReading; PARSE_TABLE_SIZE] = build_parse_table();
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TemperatureReading {
   reading: i16,
 }
@@ -77,12 +77,38 @@ impl TemperatureReading {
     self.reading
   }
 
+  fn parse_float_manual(s: &str) -> Self {
+    let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
+    let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
+    if s.as_bytes()[0] == b'-' {
+      ones = -ones;
+    }
+    Self {
+      reading: tens * 10 + ones,
+    }
+  }
+
   fn parse_float_magic(s: &str) -> Self {
     let val = unsafe { read_unaligned(s.as_ptr() as *const u64) };
-    // Expect a newline char at byte position 4 - 6, zero it off:
-    const NEWLINE_SEARCH_MASK: u64 = 0x0101_0101_0101_0101 * b'\n' as u64;
-    let mask = NEWLINE_SEARCH_MASK ^ val;
-    todo!();
+    const LOW_BITS: u64 = 0x0101_0101_0101_0101;
+    const NEWLINE_SEARCH_MASK: u64 = LOW_BITS * b'\n' as u64;
+
+    // Set newline bytes to 0xff
+    let mask = !NEWLINE_SEARCH_MASK ^ val;
+    // Note: The newline char can only appear at byte positions 4 - 6:
+    let all_but_msb = mask & 0x0000_7f7f_7f00_0000;
+    let high_bit_if_non_msb_zero = all_but_msb + LOW_BITS;
+    let high_bit_if_zero = high_bit_if_non_msb_zero & mask;
+    let low_bit_if_zero = (high_bit_if_zero >> 7) & LOW_BITS;
+
+    // There can only be one newline byte in this string since no two newlines
+    // are within 2 characters of each other, per the file format.
+    debug_assert_eq!(low_bit_if_zero.count_ones(), 1);
+
+    // Mask off all bytes starting from the newline:
+    let val = val & (low_bit_if_zero - 1);
+
+    PARSE_TABLE[parse_table_idx(val)]
   }
 }
 
@@ -92,15 +118,7 @@ impl FromStr for TemperatureReading {
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     debug_assert!((3..=5).contains(&s.len()));
     debug_assert_eq!(s.as_bytes()[s.len() - 2], b'.');
-
-    let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
-    let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
-    if s.as_bytes()[0] == b'-' {
-      ones = -ones;
-    }
-    Ok(Self {
-      reading: tens * 10 + ones,
-    })
+    Ok(Self::parse_float_manual(s))
   }
 }
 
@@ -122,6 +140,13 @@ mod tests {
   use crate::temperature_reading::{
     int_val_to_str_encoding, parse_table_idx, TemperatureReading, PARSE_TABLE,
   };
+
+  fn int_val_to_str(val: i16) -> String {
+    let sign = if val < 0 { "-" } else { "" };
+    let tens = val.abs() / 10;
+    let ones = val.abs() % 10;
+    format!("{sign}{tens}.{ones}")
+  }
 
   #[test]
   fn test_int_val_to_str_encoding() {
@@ -147,6 +172,20 @@ mod tests {
     for val in -999..=999 {
       let table_idx = parse_table_idx(int_val_to_str_encoding(val));
       assert_eq!(PARSE_TABLE[table_idx].reading(), val);
+    }
+  }
+
+  #[test]
+  fn test_parse() {
+    for val in -999..=999 {
+      let s = format!("{}\nab\n", int_val_to_str(val));
+      let to_parse = s.strip_suffix("\nab\n").unwrap();
+      println!("Parsing {to_parse}");
+      assert_eq!(
+        TemperatureReading::parse_float_magic(to_parse),
+        TemperatureReading::parse_float_manual(to_parse),
+        "Parsing {to_parse}"
+      );
     }
   }
 }
