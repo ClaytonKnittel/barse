@@ -3,15 +3,11 @@ use std::{
     __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
     _mm256_store_si256,
   },
-  hint::unreachable_unchecked,
   ptr::read_unaligned,
   slice,
-  str::FromStr,
 };
 
 use crate::temperature_reading::TemperatureReading;
-
-const MAX_WEATHER_STATION_LEN: usize = 50;
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
