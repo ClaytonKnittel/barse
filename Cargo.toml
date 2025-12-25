@@ -19,3 +19,6 @@ inherits = "release"
 opt-level = 3
 debug = 2
 strip = "none"
+
+[dev-dependencies]
+googletest = "0.14.2"

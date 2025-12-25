@@ -73,8 +73,26 @@ impl TemperatureReading {
     Self { reading }
   }
 
+  pub fn from_encoding(encoding: u64) -> Self {
+    Self::u64_encoding_to_self(encoding)
+  }
+
   pub const fn reading(&self) -> i16 {
     self.reading
+  }
+
+  fn u64_encoding_to_self(encoding: u64) -> Self {
+    let mask = if encoding.to_ne_bytes()[3] == b'\n' {
+      0x0000_0000_00ff_ffff
+    } else if encoding.to_ne_bytes()[4] == b'\n' {
+      0x0000_0000_ffff_ffff
+    } else {
+      debug_assert!(encoding.to_ne_bytes()[5] == b'\n' || (encoding >> 40) == 0);
+      0x0000_00ff_ffff_ffff
+    };
+    let val = encoding & mask;
+
+    unsafe { *PARSE_TABLE.get_unchecked(parse_table_idx(val)) }
   }
 
   #[cfg(test)]
@@ -90,20 +108,8 @@ impl TemperatureReading {
   }
 
   fn parse_float_magic(s: &str) -> Self {
-    let val = unsafe { read_unaligned(s.as_ptr() as *const u64) };
-
-    // Mask off all bytes starting from the newline:
-    let mask = if val.to_ne_bytes()[3] == b'\n' {
-      0x0000_0000_00ff_ffff
-    } else if val.to_ne_bytes()[4] == b'\n' {
-      0x0000_0000_ffff_ffff
-    } else {
-      debug_assert_eq!(val.to_ne_bytes()[5], b'\n');
-      0x0000_00ff_ffff_ffff
-    };
-    let val = val & mask;
-
-    unsafe { *PARSE_TABLE.get_unchecked(parse_table_idx(val)) }
+    let encoding = unsafe { read_unaligned(s.as_ptr() as *const u64) };
+    Self::u64_encoding_to_self(encoding)
   }
 }
 
