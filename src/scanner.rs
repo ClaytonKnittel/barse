@@ -359,4 +359,43 @@ mod tests {
     );
     expect_that!(scanner.next(), none());
   }
+
+  #[gtest]
+  fn test_iter_many_places() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'P', b'1', b';', b'1', b'.', b'2', b'\n', b'P', //
+        b'2', b';', b'3', b'.', b'4', b'\n', b'P', b'3', //
+        b';', b'5', b'.', b'6', b'\n', b'P', b'4', b';', //
+        b'7', b'.', b'8', b'\n', b'P', b'5', b';', b'9', //
+        b'.', b'0', b'\n', 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("P1"), eq(TemperatureReading::new(12))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("P2"), eq(TemperatureReading::new(34))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("P3"), eq(TemperatureReading::new(56))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("P4"), eq(TemperatureReading::new(78))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("P5"), eq(TemperatureReading::new(90))))
+    );
+    expect_that!(scanner.next(), none());
+  }
 }
