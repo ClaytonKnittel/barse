@@ -138,13 +138,19 @@ impl<'a> Scanner<'a> {
 
   // #[cold]
   fn parse_temp_from_copied_buffer(&self, start_offset: u32) -> TemperatureReading {
-    #[repr(align(32))]
-    struct TempStorage([u8; 37]);
+    #[repr(align(64))]
+    struct TempStorage([u8; 64]);
 
-    let mut temp_storage = TempStorage([0; 37]);
+    let mut temp_storage = TempStorage([0; 64]);
     unsafe { _mm256_store_si256(temp_storage.0.as_mut_ptr() as *mut __m256i, self.cache) };
-    let encoding =
-      unsafe { read_unaligned(temp_storage.0[start_offset as usize..].as_ptr() as *const u64) };
+    let encoding = unsafe {
+      read_unaligned(
+        temp_storage
+          .0
+          .get_unchecked(start_offset as usize..)
+          .as_ptr() as *const u64,
+      )
+    };
 
     TemperatureReading::from_encoding(encoding)
   }
@@ -153,7 +159,7 @@ impl<'a> Scanner<'a> {
   fn find_next_temp_reading(&mut self) -> TemperatureReading {
     let start_offset = self.cur_offset;
     let temp_start_ptr = self.offset_to_ptr(start_offset);
-    let start_ptr = self.buffer[start_offset as usize..].as_ptr();
+    let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
