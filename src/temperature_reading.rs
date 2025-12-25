@@ -151,7 +151,9 @@ mod tests {
 
   use itertools::Itertools;
 
-  use crate::temperature_reading::{int_val_to_str_encoding, TemperatureReading};
+  use crate::temperature_reading::{
+    int_val_to_str_encoding, parse_table_idx, TemperatureReading, PARSE_TABLE,
+  };
 
   #[test]
   fn test_int_val_to_str_encoding() {
@@ -169,6 +171,14 @@ mod tests {
 
       let temp_reading: TemperatureReading = as_str.parse().unwrap();
       assert_eq!(temp_reading.reading(), val);
+    }
+  }
+
+  #[test]
+  fn test_parse_table() {
+    for val in -999..=999 {
+      let table_idx = parse_table_idx(int_val_to_str_encoding(val));
+      assert_eq!(PARSE_TABLE[table_idx].reading(), val);
     }
   }
 }
