@@ -77,6 +77,7 @@ impl TemperatureReading {
     self.reading
   }
 
+  #[cfg(test)]
   fn parse_float_manual(s: &str) -> Self {
     let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
     let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
@@ -118,7 +119,7 @@ impl FromStr for TemperatureReading {
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     debug_assert!((3..=5).contains(&s.len()));
     debug_assert_eq!(s.as_bytes()[s.len() - 2], b'.');
-    Ok(Self::parse_float_manual(s))
+    Ok(Self::parse_float_magic(s))
   }
 }
 
@@ -162,7 +163,7 @@ mod tests {
       let as_str =
         str::from_utf8(unsafe { slice::from_raw_parts(bytes.as_ptr(), first_zero_byte) }).unwrap();
 
-      let temp_reading: TemperatureReading = as_str.parse().unwrap();
+      let temp_reading = TemperatureReading::parse_float_manual(as_str);
       assert_eq!(temp_reading.reading(), val);
     }
   }
