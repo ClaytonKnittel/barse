@@ -103,7 +103,7 @@ impl TemperatureReading {
     };
     let val = val & mask;
 
-    PARSE_TABLE[parse_table_idx(val)]
+    unsafe { *PARSE_TABLE.get_unchecked(parse_table_idx(val)) }
   }
 }
 
