@@ -1,40 +1,9 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::c_void, fmt::Display, fs::File, str::FromStr};
+use std::{cmp::Ordering, collections::HashMap, ffi::c_void, fmt::Display, fs::File};
 
 use itertools::Itertools;
 use memmap2::{Advice, MmapOptions};
 
-use crate::error::{BarseError, BarseResult};
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct TemperatureReading {
-  reading: i16,
-}
-
-impl FromStr for TemperatureReading {
-  type Err = BarseError;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    debug_assert!((3..=5).contains(&s.len()));
-    debug_assert_eq!(s.as_bytes()[s.len() - 2], b'.');
-    let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
-    let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
-    if s.as_bytes()[0] == b'-' {
-      ones = -ones;
-    }
-    Ok(Self {
-      reading: tens * 10 + ones,
-    })
-  }
-}
-
-impl Display for TemperatureReading {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let neg = if self.reading < 0 { "-" } else { "" };
-    let tens = self.reading.abs() / 10;
-    let ones = self.reading.abs() % 10;
-    write!(f, "{neg}{tens}.{ones}")
-  }
-}
+use crate::{error::BarseResult, temperature_reading::TemperatureReading};
 
 struct TemperatureSummary {
   min: TemperatureReading,
@@ -56,15 +25,13 @@ impl TemperatureSummary {
     let rounding_offset = self.count as i64 / 2;
     let avg = (self.total + rounding_offset).div_euclid(self.count as i64);
     debug_assert!((i16::MIN as i64..=i16::MAX as i64).contains(&avg));
-    TemperatureReading {
-      reading: avg as i16,
-    }
+    TemperatureReading::new(avg as i16)
   }
 
   fn add_reading(&mut self, temp: TemperatureReading) {
     self.min = self.min.min(temp);
     self.max = self.max.max(temp);
-    self.total += temp.reading as i64;
+    self.total += temp.reading() as i64;
     self.count += 1;
   }
 }
@@ -72,8 +39,8 @@ impl TemperatureSummary {
 impl Default for TemperatureSummary {
   fn default() -> Self {
     Self {
-      min: TemperatureReading { reading: i16::MAX },
-      max: TemperatureReading { reading: i16::MIN },
+      min: TemperatureReading::new(i16::MAX),
+      max: TemperatureReading::new(i16::MIN),
       total: 0,
       count: 0,
     }

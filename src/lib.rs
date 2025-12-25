@@ -6,6 +6,7 @@ use crate::error::BarseResult;
 
 pub mod barse;
 pub mod error;
+pub mod temperature_reading;
 
 #[derive(Parser, Debug)]
 struct Args {
