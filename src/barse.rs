@@ -102,7 +102,14 @@ pub fn temperature_reading_summaries(
       .try_fold(
         HashMap::<String, TemperatureSummary>::new(),
         |mut map, (station, temp)| -> BarseResult<_> {
-          map.entry(station.to_owned()).or_default().add_reading(temp);
+          match map.get_mut(station) {
+            Some(summary) => summary.add_reading(temp),
+            None => {
+              let mut summary = TemperatureSummary::default();
+              summary.add_reading(temp);
+              map.insert(station.to_owned(), summary);
+            }
+          }
           Ok(map)
         },
       )?
