@@ -14,7 +14,7 @@ use crate::temperature_reading::TemperatureReading;
 const MAX_WEATHER_STATION_LEN: usize = 50;
 
 /// Scans for alternating semicolons and newlines.
-struct Scanner<'a> {
+pub struct Scanner<'a> {
   buffer: &'a [u8],
   cache: __m256i,
   semicolon_mask: u32,
@@ -33,8 +33,6 @@ impl<'a> Scanner<'a> {
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len().is_multiple_of(32));
     let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(buffer) };
-    println!("semicolon mask: {semicolon_mask:08x}");
-    println!("newline mask:   {newline_mask:08x}");
     Self {
       buffer,
       cache,

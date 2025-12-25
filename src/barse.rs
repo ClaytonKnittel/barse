@@ -1,9 +1,9 @@
-use std::{cmp::Ordering, collections::HashMap, ffi::c_void, fmt::Display, fs::File};
+use std::{cmp::Ordering, collections::HashMap, fmt::Display, fs::File, slice};
 
 use itertools::Itertools;
 use memmap2::{Advice, MmapOptions};
 
-use crate::{error::BarseResult, temperature_reading::TemperatureReading};
+use crate::{error::BarseResult, scanner::Scanner, temperature_reading::TemperatureReading};
 
 struct TemperatureSummary {
   min: TemperatureReading,
@@ -85,34 +85,8 @@ impl Display for WeatherStation {
   }
 }
 
-fn char_offset(buffer: *const u8, needle: u8, len: usize) -> usize {
-  let semicolon = unsafe { libc::memchr(buffer as *const c_void, needle as i32, len) } as *const u8;
-  unsafe { semicolon.offset_from(buffer) as usize }
-}
-
-fn parse_lines_from_buffer(mut buffer: &[u8]) -> impl Iterator<Item = (&str, TemperatureReading)> {
-  const MAX_WEATHER_STATION_LEN: usize = 50;
-
-  std::iter::from_fn(move || {
-    if buffer.is_empty() {
-      return None;
-    }
-
-    let semicolon_offset = char_offset(buffer.as_ptr(), b';', MAX_WEATHER_STATION_LEN + 1);
-    let newline_offset =
-      semicolon_offset + 1 + char_offset(buffer[semicolon_offset + 1..].as_ptr(), b'\n', 6);
-
-    let station = unsafe { str::from_utf8_unchecked(&buffer[..semicolon_offset]) };
-    let temp = unsafe {
-      str::from_utf8_unchecked(&buffer[semicolon_offset + 1..newline_offset])
-        .parse()
-        .unwrap_unchecked()
-    };
-
-    buffer = &buffer[newline_offset + 1..];
-
-    Some((station, temp))
-  })
+unsafe fn round_up_to_32b_boundary(buffer: &[u8]) -> &[u8] {
+  unsafe { slice::from_raw_parts(buffer.as_ptr(), buffer.len().next_multiple_of(32)) }
 }
 
 pub fn temperature_reading_summaries(
@@ -121,9 +95,10 @@ pub fn temperature_reading_summaries(
   let file = File::open(input_path)?;
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;
+  let map_buffer = unsafe { round_up_to_32b_boundary(&map) };
 
   Ok(
-    parse_lines_from_buffer(&map)
+    Scanner::new(map_buffer)
       .try_fold(
         HashMap::<String, TemperatureSummary>::new(),
         |mut map, (station, temp)| -> BarseResult<_> {
