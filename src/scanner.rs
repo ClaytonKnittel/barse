@@ -1,8 +1,7 @@
 use std::{
   arch::x86_64::{
-    __m256i, _mm256_blendv_epi8, _mm256_castsi256_si128, _mm256_cmpeq_epi8, _mm256_load_si256,
-    _mm256_movemask_epi8, _mm256_permute2f128_si256, _mm256_permute2x128_si256, _mm256_set1_epi8,
-    _mm256_store_si256, _mm_cvtsi128_si64,
+    __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
+    _mm256_store_si256,
   },
   hint::unreachable_unchecked,
   ptr::read_unaligned,
@@ -32,8 +31,7 @@ impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len().is_multiple_of(32));
-    let (buffer, cache, semicolon_mask, newline_mask) =
-      unsafe { Self::read_next_from_buffer(buffer) };
+    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(buffer) };
     println!("semicolon mask: {semicolon_mask:08x}");
     println!("newline mask:   {newline_mask:08x}");
     Self {
@@ -46,11 +44,11 @@ impl<'a> Scanner<'a> {
   }
 
   #[target_feature(enable = "avx2")]
-  fn read_next_from_buffer(buffer: &[u8]) -> (&[u8], __m256i, u32, u32) {
+  fn read_next_from_buffer(buffer: &[u8]) -> (__m256i, u32, u32) {
     let cache = unsafe { _mm256_load_si256(buffer.as_ptr() as *const __m256i) };
     let semicolon_mask = Self::char_mask(cache, b';');
     let newline_mask = Self::char_mask(cache, b'\n');
-    (&buffer[32..], cache, semicolon_mask, newline_mask)
+    (cache, semicolon_mask, newline_mask)
   }
 
   #[target_feature(enable = "avx2")]
@@ -64,9 +62,8 @@ impl<'a> Scanner<'a> {
     if self.buffer.is_empty() {
       return false;
     }
-    let (buffer, cache, semicolon_mask, newline_mask) =
-      unsafe { Self::read_next_from_buffer(self.buffer) };
-    self.buffer = buffer;
+    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
+    self.buffer = &self.buffer[32..];
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
@@ -153,8 +150,8 @@ impl<'a> Iterator for Scanner<'a> {
 
   fn next(&mut self) -> Option<Self::Item> {
     let station_name = self.find_next_station_name()?;
-
-    Some((station_name, TemperatureReading::new(0)))
+    let temperature_reading = unsafe { self.find_next_temp_reading() };
+    Some((station_name, temperature_reading))
   }
 }
 
