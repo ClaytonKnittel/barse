@@ -13,7 +13,6 @@ fn main() -> ExitCode {
   #[cfg(feature = "profiled")]
   let guard = pprof::ProfilerGuardBuilder::default()
     .frequency(1000)
-    .blocklist(&["libc", "libgcc", "pthread", "vdso"])
     .build()
     .unwrap();
 
