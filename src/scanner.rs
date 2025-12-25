@@ -72,7 +72,7 @@ impl<'a> Scanner<'a> {
   }
 
   fn offset_to_ptr(&self, offset: u32) -> *const u8 {
-    debug_assert!(offset < Self::BYTES_PER_BUFFER);
+    debug_assert!(offset <= Self::BYTES_PER_BUFFER);
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
@@ -109,8 +109,8 @@ impl<'a> Scanner<'a> {
 
     self.cur_offset = semicolon_offset + 1;
     if semicolon_offset == 31 {
-      debug_assert!(!self.buffer.is_empty());
-      if self.buffer.is_empty() {
+      debug_assert!(self.buffer.len() > 32);
+      if self.buffer.len() == 32 {
         unsafe { unreachable_unchecked() };
       }
 
@@ -138,7 +138,7 @@ impl<'a> Scanner<'a> {
         read_unaligned(temp_storage.0[self.cur_offset as usize..].as_ptr() as *const u64)
       };
 
-      self.cur_offset = self.newline_mask.trailing_zeros();
+      self.cur_offset = self.newline_mask.trailing_zeros() + 1;
       self.newline_mask &= self.newline_mask - 1;
 
       TemperatureReading::from_encoding(encoding)
@@ -170,7 +170,7 @@ mod tests {
   }
 
   #[gtest]
-  fn test_iter() {
+  fn test_iter_single_element() {
     let buffer = AlignedBuffer {
       buffer: [
         b'G', b'a', b's', b's', b'e', b'l', b't', b'e', b'r', b'b', b'o', b'e', b'r', b'v', b'e',
@@ -186,6 +186,28 @@ mod tests {
         eq("Gasselterboerveenschemond"),
         eq(TemperatureReading::new(-123))
       ))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_two_rows() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'A', b'b', b';', b'2', b'0', b'.', b'8', b'\n', //
+        b'C', b'd', b';', b'1', b'.', b'9', b'\n', //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("Ab"), eq(TemperatureReading::new(208))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Cd"), eq(TemperatureReading::new(19))))
     );
     expect_that!(scanner.next(), none());
   }
