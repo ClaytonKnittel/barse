@@ -77,6 +77,11 @@ impl TemperatureReading {
     Self::u64_encoding_to_self(encoding)
   }
 
+  pub fn from_raw_ptr(str_ptr: *const u8) -> Self {
+    let encoding = unsafe { read_unaligned(str_ptr as *const u64) };
+    Self::u64_encoding_to_self(encoding)
+  }
+
   pub const fn reading(&self) -> i16 {
     self.reading
   }
@@ -112,8 +117,7 @@ impl TemperatureReading {
   }
 
   fn parse_float_magic(s: &str) -> Self {
-    let encoding = unsafe { read_unaligned(s.as_ptr() as *const u64) };
-    Self::u64_encoding_to_self(encoding)
+    Self::from_raw_ptr(s.as_ptr())
   }
 }
 

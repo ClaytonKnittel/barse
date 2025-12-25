@@ -6,6 +6,7 @@ use std::{
   hint::unreachable_unchecked,
   ptr::read_unaligned,
   slice,
+  str::FromStr,
 };
 
 use crate::temperature_reading::TemperatureReading;
@@ -58,16 +59,21 @@ impl<'a> Scanner<'a> {
     _mm256_movemask_epi8(eq_mask) as u32
   }
 
-  fn read_next(&mut self) -> bool {
-    debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == 32 {
-      return false;
-    }
+  fn read_next_assuming_available(&mut self) {
+    debug_assert!(self.buffer.len() > 32);
     self.buffer = &self.buffer[32..];
     let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
+  }
+
+  fn read_next(&mut self) -> bool {
+    debug_assert!(!self.buffer.is_empty());
+    if self.buffer.len() == 32 {
+      return false;
+    }
+    self.read_next_assuming_available();
     true
   }
 
@@ -102,20 +108,14 @@ impl<'a> Scanner<'a> {
     let station_name_slice = unsafe {
       slice::from_raw_parts::<'a>(
         station_start,
-        station_end.byte_offset_from(station_start) as usize,
+        station_end.byte_offset_from_unsigned(station_start),
       )
     };
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
     self.cur_offset = semicolon_offset + 1;
     if semicolon_offset == 31 {
-      debug_assert!(self.buffer.len() > 32);
-      if self.buffer.len() == 32 {
-        unsafe { unreachable_unchecked() };
-      }
-
-      let res = self.read_next();
-      debug_assert!(res);
+      self.read_next_assuming_available();
       self.cur_offset = 0;
     }
 
@@ -126,7 +126,15 @@ impl<'a> Scanner<'a> {
   fn find_next_temp_reading(&mut self) -> TemperatureReading {
     if self.newline_mask == 0 {
       // Slow path
-      todo!();
+      let temp_start_ptr = self.offset_to_ptr(self.cur_offset);
+      self.read_next_assuming_available();
+
+      debug_assert!(self.newline_mask != 0);
+      let newline_offset = self.newline_mask.trailing_zeros();
+      self.cur_offset = newline_offset + 1;
+      debug_assert!(self.cur_offset < 32);
+
+      TemperatureReading::from_raw_ptr(temp_start_ptr)
     } else {
       // Fast path
       #[repr(align(32))]
@@ -235,6 +243,66 @@ mod tests {
     expect_that!(
       scanner.next(),
       some((eq("Nopqrstu"), eq(TemperatureReading::new(12))))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_ends_on_boundary() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'A', b'b', b'c', b'd', b'e', b'f', b'g', b'h', //
+        b'i', b'j', b'k', b'l', b'm', b'n', b'o', b'p', //
+        b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', //
+        b'y', b'z', b';', b'2', b'3', b'.', b'4', b'\n', //
+        b'N', b'e', b'w', b' ', b'B', b'u', b'f', b'f', //
+        b'e', b'r', b';', b'3', b'.', b'4', b'\n', 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((
+        eq("Abcdefghijklmnopqrstuvwxyz"),
+        eq(TemperatureReading::new(234))
+      ))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_end_first_of_next_boundary() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'A', b'b', b'c', b'd', b'e', b'f', b'g', b'h', //
+        b'i', b'j', b'k', b'l', b'm', b'n', b'o', b'p', //
+        b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', //
+        b'y', b'z', b';', b'-', b'2', b'3', b'.', b'4', //
+        b'\n', b'N', b'e', b'w', b' ', b'B', b'u', b'f', //
+        b'f', b'e', b'r', b';', b'3', b'.', b'4', b'\n', //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((
+        eq("Abcdefghijklmnopqrstuvwxyz"),
+        eq(TemperatureReading::new(-234))
+      ))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
     );
     expect_that!(scanner.next(), none());
   }
