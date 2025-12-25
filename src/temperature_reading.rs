@@ -51,39 +51,7 @@ const fn build_parse_table() -> [TemperatureReading; PARSE_TABLE_SIZE] {
   let mut table = [TemperatureReading::new(0); PARSE_TABLE_SIZE];
   let mut val = -999i16;
   while val <= 999 {
-    let mut ascii_encoding = 0;
-    let mut ascii_idx = 0;
-
-    const fn write_char(ascii_encoding: &mut u64, ascii_idx: &mut u32, c: u8) {
-      debug_assert!(*ascii_idx < 8);
-      *ascii_encoding += (c as u64) << (*ascii_idx * 8);
-      *ascii_idx += 1;
-    }
-
-    if val < 0 {
-      write_char(&mut ascii_encoding, &mut ascii_idx, b'-');
-    }
-
-    let pos_val = val.abs();
-    if pos_val >= 100 {
-      write_char(
-        &mut ascii_encoding,
-        &mut ascii_idx,
-        (pos_val / 100) as u8 + b'0',
-      );
-    }
-    write_char(
-      &mut ascii_encoding,
-      &mut ascii_idx,
-      (pos_val / 10 % 10) as u8 + b'0',
-    );
-    write_char(&mut ascii_encoding, &mut ascii_idx, b'.');
-    write_char(
-      &mut ascii_encoding,
-      &mut ascii_idx,
-      (pos_val % 10) as u8 + b'0',
-    );
-
+    let ascii_encoding = int_val_to_str_encoding(val);
     let idx = parse_table_idx(ascii_encoding);
     debug_assert!(table[idx].reading() == 0);
     table[idx] = TemperatureReading::new(val);
