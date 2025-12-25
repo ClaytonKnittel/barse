@@ -1,30 +1,12 @@
 use std::process::ExitCode;
 
-use barse::temperature_reading_summaries;
+use barse::run_parser;
 use clap::Parser;
-use itertools::Itertools;
-
-use crate::error::BarseResult;
-
-mod barse;
-mod error;
 
 #[derive(Parser, Debug)]
 struct Args {
   #[arg(long, default_value = "measurements.txt")]
   input: String,
-}
-
-fn run() -> BarseResult {
-  let args = Args::try_parse()?;
-
-  println!(
-    "{{{}}}",
-    temperature_reading_summaries(&args.input)?
-      .map(|station| format!("{station}"))
-      .join(", ")
-  );
-  Ok(())
 }
 
 fn main() -> ExitCode {
@@ -35,7 +17,7 @@ fn main() -> ExitCode {
     .build()
     .unwrap();
 
-  let res = run();
+  let res = run_parser();
 
   #[cfg(feature = "profiled")]
   if let Ok(report) = guard.report().build() {
