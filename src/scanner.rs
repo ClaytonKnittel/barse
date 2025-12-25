@@ -122,35 +122,52 @@ impl<'a> Scanner<'a> {
     Some(station_name)
   }
 
+  fn refresh_buffer_for_trailing_temp(&mut self) {
+    self.read_next_assuming_available();
+
+    debug_assert!(self.newline_mask != 0);
+    let newline_offset = self.newline_mask.trailing_zeros();
+    self.cur_offset = newline_offset + 1;
+    debug_assert!(self.cur_offset < 32);
+  }
+
+  fn unaligned_u64_read_would_cross_page_boundary(start_ptr: *const u8) -> bool {
+    const PAGE_SIZE: usize = 4096;
+    (start_ptr as usize) % PAGE_SIZE > PAGE_SIZE - (u64::BITS as usize / 8)
+  }
+
+  // #[cold]
+  fn parse_temp_from_copied_buffer(&self, start_offset: u32) -> TemperatureReading {
+    #[repr(align(32))]
+    struct TempStorage([u8; 37]);
+
+    let mut temp_storage = TempStorage([0; 37]);
+    unsafe { _mm256_store_si256(temp_storage.0.as_mut_ptr() as *mut __m256i, self.cache) };
+    let encoding =
+      unsafe { read_unaligned(temp_storage.0[start_offset as usize..].as_ptr() as *const u64) };
+
+    TemperatureReading::from_encoding(encoding)
+  }
+
   #[target_feature(enable = "avx2")]
   fn find_next_temp_reading(&mut self) -> TemperatureReading {
+    let start_offset = self.cur_offset;
+    let temp_start_ptr = self.offset_to_ptr(start_offset);
+    let start_ptr = self.buffer[start_offset as usize..].as_ptr();
+
     if self.newline_mask == 0 {
-      // Slow path
-      let temp_start_ptr = self.offset_to_ptr(self.cur_offset);
-      self.read_next_assuming_available();
-
-      debug_assert!(self.newline_mask != 0);
-      let newline_offset = self.newline_mask.trailing_zeros();
-      self.cur_offset = newline_offset + 1;
-      debug_assert!(self.cur_offset < 32);
-
-      TemperatureReading::from_raw_ptr(temp_start_ptr)
-    } else {
-      // Fast path
-      #[repr(align(32))]
-      struct TempStorage([u8; 37]);
-
-      let mut temp_storage = TempStorage([0; 37]);
-      unsafe { _mm256_store_si256(temp_storage.0.as_mut_ptr() as *mut __m256i, self.cache) };
-      let encoding = unsafe {
-        read_unaligned(temp_storage.0[self.cur_offset as usize..].as_ptr() as *const u64)
-      };
-
-      self.cur_offset = self.newline_mask.trailing_zeros() + 1;
-      self.newline_mask &= self.newline_mask - 1;
-
-      TemperatureReading::from_encoding(encoding)
+      self.refresh_buffer_for_trailing_temp();
     }
+
+    self.cur_offset = self.newline_mask.trailing_zeros() + 1;
+    self.newline_mask &= self.newline_mask - 1;
+
+    // Slow path in case we are in danger of reading across a page boundary.
+    if Self::unaligned_u64_read_would_cross_page_boundary(start_ptr) {
+      return self.parse_temp_from_copied_buffer(start_offset);
+    }
+
+    TemperatureReading::from_raw_ptr(temp_start_ptr)
   }
 }
 
@@ -297,6 +314,36 @@ mod tests {
       scanner.next(),
       some((
         eq("Abcdefghijklmnopqrstuvwxyz"),
+        eq(TemperatureReading::new(-234))
+      ))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_temp_crosses_boundary() {
+    let buffer = AlignedBuffer {
+      buffer: [
+        b'A', b'b', b'c', b'd', b'e', b'f', b'g', b'h', //
+        b'i', b'j', b'k', b'l', b'm', b'n', b'o', b'p', //
+        b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', //
+        b'y', b'z', b'1', b'2', b'3', b';', b'-', b'2', //
+        b'3', b'.', b'4', b'\n', b'N', b'e', b'w', b' ', //
+        b'B', b'u', b'f', b'f', b'e', b'r', b';', b'3', //
+        b'.', b'4', b'\n', 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+    };
+
+    let mut scanner = Scanner::new(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((
+        eq("Abcdefghijklmnopqrstuvwxyz123"),
         eq(TemperatureReading::new(-234))
       ))
     );
