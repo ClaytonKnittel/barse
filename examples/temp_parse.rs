@@ -1,6 +1,12 @@
-use std::process::ExitCode;
+use std::{
+  process::ExitCode,
+  sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+  },
+};
 
-use barse::error::BarseResult;
+use barse::error::{BarseError, BarseResult};
 use itertools::Itertools;
 use rand::{rng, RngCore};
 
@@ -50,17 +56,53 @@ fn all_unique_with_bits(universe: &[u64], magic: u64, bits: u32) -> bool {
 }
 
 fn run() -> BarseResult {
-  let all_values = generate_input().collect_vec();
-  let mut rng = rng();
+  let all_values = Arc::new(generate_input().collect_vec());
 
-  let mut fewest_bits = 20;
-  while (1 << fewest_bits) > all_values.len() {
-    let magic = rng.next_u64();
+  let fewest_bits = Arc::new(AtomicU32::new(20));
+  let threads = (0..10)
+    .map(|_| {
+      let all_values = all_values.clone();
+      let fewest_bits = fewest_bits.clone();
+      std::thread::spawn(move || {
+        let mut rng = rng();
 
-    while all_unique_with_bits(&all_values, magic, fewest_bits - 1) {
-      println!("Magic {magic:016x} unique with {} bits", fewest_bits - 1);
-      fewest_bits -= 1;
-    }
+        let mut prev_fewest_bits = fewest_bits.load(Ordering::SeqCst);
+        while (1 << prev_fewest_bits) > all_values.len() {
+          let magic = rng.next_u64();
+
+          let mut attempt = prev_fewest_bits - 1;
+
+          while all_unique_with_bits(&all_values, magic, attempt) {
+            println!("Magic {magic:016x} unique with size {}", 1 << attempt);
+
+            while prev_fewest_bits > attempt {
+              match fewest_bits.compare_exchange_weak(
+                prev_fewest_bits,
+                attempt,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+              ) {
+                Ok(_) => {
+                  prev_fewest_bits = attempt;
+                  break;
+                }
+                Err(new_fewest_bits) => prev_fewest_bits = new_fewest_bits,
+              }
+            }
+
+            attempt = prev_fewest_bits - 1;
+          }
+
+          prev_fewest_bits = fewest_bits.load(Ordering::SeqCst);
+        }
+      })
+    })
+    .collect_vec();
+
+  for thread in threads {
+    thread
+      .join()
+      .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
   }
 
   Ok(())
