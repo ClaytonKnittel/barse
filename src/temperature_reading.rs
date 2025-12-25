@@ -91,23 +91,17 @@ impl TemperatureReading {
 
   fn parse_float_magic(s: &str) -> Self {
     let val = unsafe { read_unaligned(s.as_ptr() as *const u64) };
-    const LOW_BITS: u64 = 0x0101_0101_0101_0101;
-    const NEWLINE_SEARCH_MASK: u64 = LOW_BITS * b'\n' as u64;
-
-    // Set newline bytes to 0xff
-    let mask = !NEWLINE_SEARCH_MASK ^ val;
-    // Note: The newline char can only appear at byte positions 4 - 6:
-    let all_but_msb = mask & 0x0000_7f7f_7f00_0000;
-    let high_bit_if_non_msb_zero = all_but_msb + LOW_BITS;
-    let high_bit_if_zero = high_bit_if_non_msb_zero & mask;
-    let low_bit_if_zero = (high_bit_if_zero >> 7) & LOW_BITS;
-
-    // There can only be one newline byte in this string since no two newlines
-    // are within 2 characters of each other, per the file format.
-    debug_assert_eq!(low_bit_if_zero.count_ones(), 1);
 
     // Mask off all bytes starting from the newline:
-    let val = val & (low_bit_if_zero - 1);
+    let mask = if val.to_ne_bytes()[3] == b'\n' {
+      0x0000_0000_00ff_ffff
+    } else if val.to_ne_bytes()[4] == b'\n' {
+      0x0000_0000_ffff_ffff
+    } else {
+      debug_assert_eq!(val.to_ne_bytes()[5], b'\n');
+      0x0000_00ff_ffff_ffff
+    };
+    let val = val & mask;
 
     PARSE_TABLE[parse_table_idx(val)]
   }
