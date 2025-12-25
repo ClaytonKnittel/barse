@@ -59,11 +59,12 @@ impl<'a> Scanner<'a> {
   }
 
   fn read_next(&mut self) -> bool {
-    if self.buffer.is_empty() {
+    debug_assert!(!self.buffer.is_empty());
+    if self.buffer.len() == 32 {
       return false;
     }
-    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
     self.buffer = &self.buffer[32..];
+    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
@@ -106,8 +107,8 @@ impl<'a> Scanner<'a> {
     };
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
-    self.cur_offset = semicolon_offset;
-    if semicolon_offset == 32 {
+    self.cur_offset = semicolon_offset + 1;
+    if semicolon_offset == 31 {
       debug_assert!(!self.buffer.is_empty());
       if self.buffer.is_empty() {
         unsafe { unreachable_unchecked() };

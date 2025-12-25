@@ -87,7 +87,11 @@ impl TemperatureReading {
     } else if encoding.to_ne_bytes()[4] == b'\n' {
       0x0000_0000_ffff_ffff
     } else {
-      debug_assert!(encoding.to_ne_bytes()[5] == b'\n' || (encoding >> 40) == 0);
+      debug_assert!(
+        encoding.to_ne_bytes()[5] == b'\n' || (encoding >> 40) == 0,
+        "Encoding: {encoding:016x}, newline = {:02x}",
+        b'\n'
+      );
       0x0000_00ff_ffff_ffff
     };
     let val = encoding & mask;
