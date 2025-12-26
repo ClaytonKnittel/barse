@@ -3,7 +3,10 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Display, fs::File, slice};
 use itertools::Itertools;
 use memmap2::{Advice, MmapOptions};
 
-use crate::{error::BarseResult, scanner::Scanner, temperature_reading::TemperatureReading};
+use crate::{
+  error::BarseResult, scanner::Scanner, str_hash::BuildStringHash,
+  temperature_reading::TemperatureReading,
+};
 
 struct TemperatureSummary {
   min: TemperatureReading,
@@ -100,7 +103,7 @@ pub fn temperature_reading_summaries(
   Ok(
     Scanner::new(map_buffer)
       .try_fold(
-        HashMap::<String, TemperatureSummary>::new(),
+        HashMap::<String, TemperatureSummary, _>::with_hasher(BuildStringHash),
         |mut map, (station, temp)| -> BarseResult<_> {
           match map.get_mut(station) {
             Some(summary) => summary.add_reading(temp),

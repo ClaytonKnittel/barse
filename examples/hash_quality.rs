@@ -9,6 +9,7 @@ use barse::{
   error::{BarseError, BarseResult},
   str_hash::BuildStringHash,
 };
+use rand::{rng, seq::IteratorRandom};
 
 fn compute_hash_quality<V, H>(values: &[V], mut hash: H, buckets: usize) -> f32
 where
@@ -29,21 +30,27 @@ where
 }
 
 fn weather_stations(path: &str) -> BarseResult<Vec<String>> {
-  BufReader::new(File::open(path)?)
-    .lines()
-    .filter(|line| !line.as_ref().is_ok_and(|line| line.starts_with('#')))
-    .map(|line| -> BarseResult<_> {
-      let line = line?;
-      line
-        .split_once(';')
-        .ok_or_else(|| BarseError::new(format!("No ';' found in line \"{line}\"")).into())
-        .map(|(station, _)| station.to_owned())
-    })
-    .collect()
+  let mut rng = rng();
+  Ok(
+    BufReader::new(File::open(path)?)
+      .lines()
+      .filter(|line| !line.as_ref().is_ok_and(|line| line.starts_with('#')))
+      .map(|line| -> BarseResult<_> {
+        let line = line?;
+        line
+          .split_once(';')
+          .ok_or_else(|| BarseError::new(format!("No ';' found in line \"{line}\"")).into())
+          .map(|(station, _)| station.to_owned())
+      })
+      .collect::<Result<Vec<_>, _>>()?
+      .into_iter()
+      .choose_multiple(&mut rng, 1_000),
+  )
 }
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
+  let cap = (10_000usize * 8 / 7).next_power_of_two();
 
   println!(
     "Default hash quality: {}",
@@ -54,7 +61,7 @@ fn run() -> BarseResult {
         hasher.write(station.as_bytes());
         hasher.finish()
       },
-      10_000
+      cap
     )
   );
 
@@ -62,12 +69,8 @@ fn run() -> BarseResult {
     "RandomState hash quality: {}",
     compute_hash_quality(
       &weather_stations,
-      |station| {
-        let mut hasher = RandomState::new().build_hasher();
-        hasher.write(station.as_bytes());
-        hasher.finish()
-      },
-      10_000
+      |station| { RandomState::new().hash_one(station) },
+      cap
     )
   );
 
@@ -75,12 +78,8 @@ fn run() -> BarseResult {
     "My hash quality: {}",
     compute_hash_quality(
       &weather_stations,
-      |station| {
-        let mut hasher = BuildStringHash.build_hasher();
-        hasher.write(station.as_bytes());
-        hasher.finish()
-      },
-      10_000
+      |station| { BuildStringHash.hash_one(station) },
+      cap
     )
   );
   Ok(())
