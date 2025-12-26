@@ -7,6 +7,7 @@ use crate::error::BarseResult;
 pub mod barse;
 pub mod error;
 pub mod scanner;
+pub mod str_hash;
 pub mod temperature_reading;
 
 #[derive(Parser, Debug)]
