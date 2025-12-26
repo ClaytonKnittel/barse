@@ -37,6 +37,8 @@ fn generate_input() -> impl Iterator<Item = u64> {
     let tens = n.abs() / 10;
     let ones = n.abs() % 10;
     let s = format!("{sign}{tens}.{ones}");
+
+    let s = if s.len() <= 4 { format!("{s}\n") } else { s };
     s.as_bytes()
       .iter()
       .enumerate()

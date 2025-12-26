@@ -4,7 +4,7 @@ use crate::error::BarseError;
 
 const PARSE_TABLE_SHIFT: u32 = 13;
 const PARSE_TABLE_SIZE: usize = 1 << PARSE_TABLE_SHIFT;
-const PARSE_MAGIC: u64 = 0xb5a491adb02afa8c;
+const PARSE_MAGIC: u64 = 0xd6df3436fe286720;
 
 const fn int_val_to_str_encoding(val: i16) -> u64 {
   let mut ascii_encoding = 0;
@@ -39,6 +39,9 @@ const fn int_val_to_str_encoding(val: i16) -> u64 {
     &mut ascii_idx,
     (pos_val % 10) as u8 + b'0',
   );
+  if ascii_idx < 5 {
+    write_char(&mut ascii_encoding, &mut ascii_idx, b'\n');
+  }
 
   ascii_encoding
 }
@@ -88,12 +91,12 @@ impl TemperatureReading {
 
   fn u64_encoding_to_self(encoding: u64) -> Self {
     let mask = if encoding.to_ne_bytes()[3] == b'\n' {
-      0x0000_0000_00ff_ffff
-    } else if encoding.to_ne_bytes()[4] == b'\n' {
       0x0000_0000_ffff_ffff
     } else {
       debug_assert!(
-        encoding.to_ne_bytes()[5] == b'\n' || (encoding >> 40) == 0,
+        encoding.to_ne_bytes()[4] == b'\n'
+          || encoding.to_ne_bytes()[5] == b'\n'
+          || (encoding >> 40) == 0,
         "Encoding: {encoding:016x}, newline = {:02x}",
         b'\n'
       );
@@ -171,7 +174,8 @@ mod tests {
       let as_str =
         str::from_utf8(unsafe { slice::from_raw_parts(bytes.as_ptr(), first_zero_byte) }).unwrap();
 
-      let temp_reading = TemperatureReading::parse_float_manual(as_str);
+      let temp_reading =
+        TemperatureReading::parse_float_manual(as_str.strip_suffix('\n').unwrap_or(as_str));
       assert_eq!(temp_reading.reading(), val);
     }
   }
