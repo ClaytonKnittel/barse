@@ -19,6 +19,7 @@ debug-assertions = false
 overflow-checks = false
 codegen-units = 1
 lto = "fat"
+panic = "abort"
 
 [profile.profiled]
 inherits = "release"
