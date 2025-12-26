@@ -1,0 +1,10 @@
+#!/usr/bin/sh
+
+# usage: ./profile.sh <binary> [args...] > onoro.svg
+
+set -e
+
+cargo b --profile profiled
+rm -f perf.data
+perf record -e cycles:pp -F 999 --call-graph dwarf -- $@ >/dev/null
+perf script | stackcollapse-perf.pl | flamegraph.pl > brc.svg
