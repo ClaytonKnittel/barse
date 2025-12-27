@@ -1,18 +1,11 @@
-use std::{
-  arch::x86_64::{
-    __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
-    _mm256_store_si256,
-  },
-  ptr::read_unaligned,
-  slice,
-};
+use std::{ptr::read_unaligned, slice};
 
-use crate::temperature_reading::TemperatureReading;
+use crate::{scanner_cache_x86::Cache, temperature_reading::TemperatureReading};
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
   buffer: &'a [u8],
-  cache: __m256i,
+  cache: Cache,
   semicolon_mask: u32,
   newline_mask: u32,
 
@@ -22,13 +15,10 @@ pub struct Scanner<'a> {
 }
 
 impl<'a> Scanner<'a> {
-  /// The count of bytes that fit in a __m256i
-  const BYTES_PER_BUFFER: u32 = 32;
-
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len().is_multiple_of(32));
-    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(buffer) };
+    debug_assert!(buffer.len().is_multiple_of(Cache::bytes_per_buffer()));
+    let (cache, semicolon_mask, newline_mask) = unsafe { Cache::read_next_from_buffer(buffer) };
     Self {
       buffer,
       cache,
@@ -38,25 +28,11 @@ impl<'a> Scanner<'a> {
     }
   }
 
-  #[target_feature(enable = "avx2")]
-  fn read_next_from_buffer(buffer: &[u8]) -> (__m256i, u32, u32) {
-    let cache = unsafe { _mm256_load_si256(buffer.as_ptr() as *const __m256i) };
-    let semicolon_mask = Self::char_mask(cache, b';');
-    let newline_mask = Self::char_mask(cache, b'\n');
-    (cache, semicolon_mask, newline_mask)
-  }
-
-  #[target_feature(enable = "avx2")]
-  fn char_mask(cache: __m256i, needle: u8) -> u32 {
-    let seach_mask = _mm256_set1_epi8(needle as i8);
-    let eq_mask = _mm256_cmpeq_epi8(cache, seach_mask);
-    _mm256_movemask_epi8(eq_mask) as u32
-  }
-
   fn read_next_assuming_available(&mut self) {
-    debug_assert!(self.buffer.len() > 32);
-    self.buffer = &self.buffer[32..];
-    let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
+    debug_assert!(self.buffer.len() > Cache::bytes_per_buffer());
+    self.buffer = &self.buffer[Cache::bytes_per_buffer()..];
+    let (cache, semicolon_mask, newline_mask) =
+      unsafe { Cache::read_next_from_buffer(self.buffer) };
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
@@ -64,7 +40,7 @@ impl<'a> Scanner<'a> {
 
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == 32 {
+    if self.buffer.len() == Cache::bytes_per_buffer() {
       return false;
     }
     self.read_next_assuming_available();
@@ -72,7 +48,7 @@ impl<'a> Scanner<'a> {
   }
 
   fn offset_to_ptr(&self, offset: u32) -> *const u8 {
-    debug_assert!(offset <= Self::BYTES_PER_BUFFER);
+    debug_assert!(offset <= Cache::bytes_per_buffer() as u32);
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
@@ -136,16 +112,13 @@ impl<'a> Scanner<'a> {
     struct TempStorage([u8; 64]);
 
     let mut temp_storage = TempStorage([0; 64]);
-    unsafe { _mm256_store_si256(temp_storage.0.as_mut_ptr() as *mut __m256i, self.cache) };
+    self.cache.aligned_store(temp_storage.0.as_mut_ptr());
 
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
-      unsafe {
-        _mm256_store_si256(
-          temp_storage.0[32..].as_mut_ptr() as *mut __m256i,
-          self.cache,
-        )
-      };
+      self
+        .cache
+        .aligned_store(temp_storage.0[Cache::bytes_per_buffer()..].as_mut_ptr());
     }
 
     let encoding = unsafe {
