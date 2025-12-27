@@ -1,4 +1,4 @@
-use std::hash::BuildHasher;
+use std::{fmt::Debug, hash::BuildHasher};
 
 use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
 
@@ -145,6 +145,12 @@ impl<const SIZE: usize, H: BuildHasher + Default> Default for WeatherStationTabl
   }
 }
 
+impl<const SIZE: usize, H> Debug for WeatherStationTable<SIZE, H> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "")
+  }
+}
+
 struct WeatherStationIterator<'a, const SIZE: usize, H> {
   table: &'a WeatherStationTable<SIZE, H>,
   index: usize,
@@ -170,6 +176,7 @@ mod tests {
   use std::hash::RandomState;
 
   use googletest::prelude::*;
+  use itertools::Itertools;
 
   use crate::{
     table::{TemperatureSummary, WeatherStationTable},
@@ -193,6 +200,59 @@ mod tests {
           count: &1,
         })
       ))
+    );
+  }
+
+  #[gtest]
+  fn test_insert_two_stations() {
+    let mut table = WeatherStationTable::<16, RandomState>::default();
+    table.add_reading("station1", TemperatureReading::new(123));
+    table.add_reading("station2", TemperatureReading::new(456));
+
+    let elements = table.iter().collect_vec();
+    expect_that!(
+      elements,
+      unordered_elements_are![
+        (
+          eq(&"station1"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(123),
+            max: &TemperatureReading::new(123),
+            total: &123,
+            count: &1,
+          }))
+        ),
+        (
+          eq(&"station2"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(456),
+            max: &TemperatureReading::new(456),
+            total: &456,
+            count: &1,
+          }))
+        )
+      ]
+    );
+  }
+
+  #[gtest]
+  fn test_insert_station_twice() {
+    let mut table = WeatherStationTable::<16, RandomState>::default();
+    table.add_reading("station1", TemperatureReading::new(123));
+    table.add_reading("station1", TemperatureReading::new(456));
+
+    let elements = table.iter().collect_vec();
+    expect_that!(
+      elements,
+      elements_are![(
+        eq(&"station1"),
+        derefs_to(pat!(TemperatureSummary {
+          min: &TemperatureReading::new(123),
+          max: &TemperatureReading::new(456),
+          total: &579,
+          count: &2,
+        }))
+      )]
     );
   }
 }
