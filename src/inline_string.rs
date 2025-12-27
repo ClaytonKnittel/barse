@@ -22,6 +22,10 @@ impl InlineString {
     s
   }
 
+  pub fn is_default(&self) -> bool {
+    self.len == 0
+  }
+
   pub fn initialize(&mut self, contents: &str) {
     debug_assert!(
       contents.len() <= MAX_STRING_LEN,
