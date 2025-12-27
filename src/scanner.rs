@@ -133,7 +133,6 @@ impl<'a> Scanner<'a> {
     TemperatureReading::from_encoding(encoding)
   }
 
-  #[target_feature(enable = "avx2")]
   fn find_next_temp_reading(&mut self) -> TemperatureReading {
     let start_offset = self.cur_offset;
     let temp_start_ptr = self.offset_to_ptr(start_offset);
@@ -162,7 +161,7 @@ impl<'a> Iterator for Scanner<'a> {
 
   fn next(&mut self) -> Option<Self::Item> {
     let station_name = self.find_next_station_name()?;
-    let temperature_reading = unsafe { self.find_next_temp_reading() };
+    let temperature_reading = self.find_next_temp_reading();
     Some((station_name, temperature_reading))
   }
 }
