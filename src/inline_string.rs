@@ -11,15 +11,14 @@ const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 
 #[repr(C, align(8))]
 pub struct InlineString {
-  bytes: [u8; STRING_STORAGE_LEN],
   len: usize,
+  bytes: [u8; STRING_STORAGE_LEN],
 }
 
 impl InlineString {
   pub fn new(contents: &str) -> Self {
     let mut s = Self::default();
-    s.bytes
-      .copy_from_slice(unsafe { &*(contents.as_ptr() as *const [u8; STRING_STORAGE_LEN]) });
+    s.initialize(contents);
     s
   }
 
@@ -30,15 +29,16 @@ impl InlineString {
       contents.len(),
       MAX_STRING_LEN
     );
+    self.len = contents.len();
     // TODO: see if I can avoid the memcpy call
     unsafe { self.bytes.get_unchecked_mut(..contents.len()) }.copy_from_slice(contents.as_bytes());
   }
 
   pub fn value(&self) -> &str {
-    unsafe { str::from_utf8_unchecked(&self.bytes) }
+    unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len)) }
   }
 
-  fn full_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
+  fn cmp_slice(&self) -> &[u8] {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 }
@@ -46,15 +46,15 @@ impl InlineString {
 impl Default for InlineString {
   fn default() -> Self {
     Self {
-      bytes: [0; STRING_STORAGE_LEN],
       len: 0,
+      bytes: [0; STRING_STORAGE_LEN],
     }
   }
 }
 
 impl PartialEq for InlineString {
   fn eq(&self, other: &Self) -> bool {
-    self.full_slice() == other.full_slice()
+    self.cmp_slice() == other.cmp_slice()
   }
 }
 
@@ -80,12 +80,32 @@ impl Borrow<str> for InlineString {
 
 impl Hash for InlineString {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    state.write(&self.bytes);
+    debug_assert!(self.bytes[self.len..].iter().all(|b| *b == 0));
+    state.write(self.value().as_bytes());
   }
 }
 
 impl Display for InlineString {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.value())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::cmp::Ordering;
+
+  use googletest::{expect_that, gtest, prelude::*};
+
+  use super::InlineString;
+
+  #[gtest]
+  fn test_cmp() {
+    let str1 = "testabcd";
+    let str2 = "test1234";
+    let i1 = InlineString::new(str::from_utf8(&str1.as_bytes()[..4]).unwrap());
+    let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
+    expect_true!(i1 == i2);
+    expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
   }
 }
