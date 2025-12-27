@@ -192,7 +192,7 @@ mod tests {
   use brc::build_input::{get_weather_stations, output_lines};
   use googletest::{gtest, prelude::*};
   use itertools::Itertools;
-  use rand::rng;
+  use rand::{rngs::StdRng, SeedableRng};
 
   use crate::{error::BarseResult, temperature_reading::TemperatureReading};
 
@@ -234,10 +234,10 @@ mod tests {
     }
   }
 
-  fn random_input_file() -> BarseResult<AlignedInput> {
+  fn random_input_file(seed: u64) -> BarseResult<AlignedInput> {
     const WEATHER_STATIONS_PATH: &str = "data/weather_stations.csv";
 
-    let mut rng = rng();
+    let mut rng = StdRng::seed_from_u64(seed);
     let stations = get_weather_stations(WEATHER_STATIONS_PATH).unwrap();
 
     Ok(AlignedInput::new(
@@ -460,7 +460,7 @@ mod tests {
 
   #[gtest]
   fn test_against() {
-    let input = random_input_file().unwrap();
+    let input = random_input_file(13).unwrap();
 
     let scanner = Scanner::new(input.slice());
     let simple_scanner = simple_scanner_iter(input.slice());
