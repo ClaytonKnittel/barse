@@ -1,14 +1,12 @@
+use core::f32;
 use std::{
   fs::File,
-  hash::{self, BuildHasher, Hasher, RandomState},
   io::{BufRead, BufReader},
   process::ExitCode,
 };
 
-use barse::{
-  error::{BarseError, BarseResult},
-  str_hash::BuildStringHash,
-};
+use barse::error::{BarseError, BarseResult};
+use itertools::Itertools;
 use rand::{rng, seq::IteratorRandom};
 
 fn compute_hash_quality<V, H>(values: &[V], mut hash: H, buckets: usize) -> f32
@@ -51,56 +49,31 @@ fn weather_stations(path: &str) -> BarseResult<Vec<String>> {
   )
 }
 
-fn new_hash(bytes: &str) -> u64 {
-  let to_u32: u32 = bytes
+fn nibble_mush(bytes: &str) -> u32 {
+  bytes
     .as_bytes()
     .iter()
     .take(8)
     .enumerate()
     .map(|(i, b)| ((b & 0x0f) as u32) << (4 * i))
-    .sum();
-  to_u32.wrapping_mul(0x01008021).reverse_bits() as u64
+    .sum()
 }
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
   const CAP: usize = 65536;
 
-  println!(
-    "Default hash quality: {}",
-    compute_hash_quality(
-      &weather_stations,
-      |station| {
-        let mut hasher = hash::DefaultHasher::new();
-        hasher.write(station.as_bytes());
-        hasher.finish()
-      },
-      CAP
-    )
-  );
+  let mut best_quality = f32::MAX;
+  for (b1, b2, b3, b4) in (0..32).tuple_combinations() {
+    let p = (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4);
+    let hash_fn = |bytes: &String| nibble_mush(bytes).wrapping_mul(p).reverse_bits() as u64;
+    let quality = compute_hash_quality(&weather_stations, hash_fn, CAP);
+    if quality < best_quality {
+      best_quality = quality;
+      println!("Quality {quality} for {p:08x}");
+    }
+  }
 
-  println!(
-    "RandomState hash quality: {}",
-    compute_hash_quality(
-      &weather_stations,
-      |station| { RandomState::new().hash_one(station) },
-      CAP
-    )
-  );
-
-  println!(
-    "My hash quality: {}",
-    compute_hash_quality(
-      &weather_stations,
-      |station| { BuildStringHash.hash_one(station) },
-      CAP
-    )
-  );
-
-  println!(
-    "New hash quality: {}",
-    compute_hash_quality(&weather_stations, |station| { new_hash(station) }, CAP)
-  );
   Ok(())
 }
 
