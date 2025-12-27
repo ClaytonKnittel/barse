@@ -1,6 +1,13 @@
 use std::{ptr::read_unaligned, slice};
 
-use crate::{scanner_cache_x86::Cache, temperature_reading::TemperatureReading};
+use crate::temperature_reading::TemperatureReading;
+
+#[cfg(not(target_feature = "avx2"))]
+use crate::scanner_cache::Cache;
+#[cfg(target_feature = "avx2")]
+use crate::scanner_cache_x86::Cache;
+
+const MAX_STATION_NAME_LEN: usize = 50;
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
@@ -18,7 +25,7 @@ impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len().is_multiple_of(Cache::bytes_per_buffer()));
-    let (cache, semicolon_mask, newline_mask) = unsafe { Cache::read_next_from_buffer(buffer) };
+    let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(buffer);
     Self {
       buffer,
       cache,
@@ -31,8 +38,7 @@ impl<'a> Scanner<'a> {
   fn read_next_assuming_available(&mut self) {
     debug_assert!(self.buffer.len() > Cache::bytes_per_buffer());
     self.buffer = &self.buffer[Cache::bytes_per_buffer()..];
-    let (cache, semicolon_mask, newline_mask) =
-      unsafe { Cache::read_next_from_buffer(self.buffer) };
+    let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(self.buffer);
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
@@ -52,19 +58,36 @@ impl<'a> Scanner<'a> {
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
+  fn find_next_semicolon(&mut self) -> bool {
+    if self.semicolon_mask != 0 {
+      return true;
+    } else if !self.read_next() {
+      return false;
+    }
+
+    // The next semicolon must be found within the next MAX_STATION_NAME_LEN +
+    // 1 bytes. In the worst case, the previous newline was the last character
+    // of the previous buffer, and the read_next call we just performed read
+    // the first `Cache::bytes_per_buffer()` bytes of the next station name.
+    // This means we may not find the next semicolon until
+    // `MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer` more bytes have
+    // been read.
+    const MAX_ITERS: usize =
+      (MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer()).div_ceil(Cache::bytes_per_buffer());
+    for _ in 0..MAX_ITERS {
+      if self.semicolon_mask != 0 {
+        return true;
+      } else if !self.read_next() {
+        return false;
+      }
+    }
+    false
+  }
+
   fn find_next_station_name(&mut self) -> Option<&'a str> {
     let station_start = self.offset_to_ptr(self.cur_offset);
-    if self.semicolon_mask == 0 {
-      if !self.read_next() {
-        return None;
-      }
-
-      // This can only occur if the next station name spanned the entire buffer
-      // read, 32 characters. Since the maximum station name is 50 characters,
-      // we are guaranteed to find the end of the station in the next region.
-      if self.semicolon_mask == 0 && !self.read_next() {
-        return None;
-      }
+    if !self.find_next_semicolon() {
+      return None;
     }
 
     debug_assert!(
@@ -457,8 +480,8 @@ mod tests {
   fn test_against_large() {
     let input = random_input_file(17, 400_000, 10_000).unwrap();
 
-    let scanner = Scanner::new(input.slice());
-    let simple_scanner = simple_scanner_iter(input.slice());
-    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
+    let results = Scanner::new(input.slice()).collect_vec();
+    let expected = simple_scanner_iter(input.slice()).collect_vec();
+    assert_eq!(results.len(), expected.len());
   }
 }

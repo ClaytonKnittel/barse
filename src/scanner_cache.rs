@@ -1,0 +1,45 @@
+#[derive(Clone, Copy)]
+pub struct Cache(u128);
+
+impl Cache {
+  pub const fn bytes_per_buffer() -> usize {
+    16
+  }
+
+  pub fn aligned_store(&self, ptr: *mut u8) {
+    let u128_ptr = ptr as *mut u128;
+    debug_assert!(u128_ptr.is_aligned());
+    unsafe { *u128_ptr = self.0 };
+  }
+
+  pub fn read_next_from_buffer(buffer: &[u8]) -> (Cache, u32, u32) {
+    let cache = unsafe { *(buffer.as_ptr() as *const u128) };
+    let semicolon_mask = Self::char_mask(cache, b';');
+    let newline_mask = Self::char_mask(cache, b'\n');
+    (Cache(cache), semicolon_mask, newline_mask)
+  }
+
+  fn compress_msb(val: u64) -> u64 {
+    const MSB: u64 = 0x8080_8080_8080_8080;
+    debug_assert!((val & !MSB) == 0);
+    const COMPRESS_PRODUCT: u64 = 0x0002_0408_1020_4081;
+    val.wrapping_mul(COMPRESS_PRODUCT) >> 56
+  }
+
+  fn find_zero_bytes(val: u128) -> u32 {
+    const MSB: u128 = 0x8080_8080_8080_8080_8080_8080_8080_8080;
+    let x = (val & !MSB) + !MSB;
+    let y = !(x | val) & MSB;
+    let lower_half = y as u64;
+    let upper_half = (y >> 64) as u64;
+
+    (Self::compress_msb(lower_half) + (Self::compress_msb(upper_half) << 8)) as u32
+  }
+
+  fn char_mask(cache: u128, needle: u8) -> u32 {
+    const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
+    let search_mask = LSB * needle as u128;
+    let zero_mask = cache ^ search_mask;
+    Self::find_zero_bytes(zero_mask)
+  }
+}
