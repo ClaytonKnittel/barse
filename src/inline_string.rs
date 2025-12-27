@@ -5,14 +5,14 @@ use std::{
   hash::{Hash, Hasher},
 };
 
-const MAX_STRING_LEN: usize = 6;
-const STRING_STORAGE_LEN: usize = 8;
+const MAX_STRING_LEN: usize = 50;
+const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 
 #[repr(C, align(8))]
 pub struct InlineString {
-  len: usize,
   bytes: [u8; STRING_STORAGE_LEN],
+  len: u32,
 }
 
 impl InlineString {
@@ -29,13 +29,13 @@ impl InlineString {
       contents.len(),
       MAX_STRING_LEN
     );
-    self.len = contents.len();
     // TODO: see if I can avoid the memcpy call
     unsafe { self.bytes.get_unchecked_mut(..contents.len()) }.copy_from_slice(contents.as_bytes());
+    self.len = contents.len() as u32;
   }
 
   pub fn value(&self) -> &str {
-    unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len)) }
+    unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len as usize)) }
   }
 
   fn cmp_slice(&self) -> &[u8] {
@@ -46,8 +46,8 @@ impl InlineString {
 impl Default for InlineString {
   fn default() -> Self {
     Self {
-      len: 0,
       bytes: [0; STRING_STORAGE_LEN],
+      len: 0,
     }
   }
 }
