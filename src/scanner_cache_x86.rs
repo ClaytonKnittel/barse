@@ -18,11 +18,15 @@ impl Cache {
   }
 
   #[target_feature(enable = "avx2")]
-  pub fn read_next_from_buffer(buffer: &[u8]) -> (Cache, u32, u32) {
+  fn read_next_from_buffer_avx(buffer: &[u8]) -> (Cache, u32, u32) {
     let cache = unsafe { _mm256_load_si256(buffer.as_ptr() as *const __m256i) };
     let semicolon_mask = Self::char_mask(cache, b';');
     let newline_mask = Self::char_mask(cache, b'\n');
     (Cache(cache), semicolon_mask, newline_mask)
+  }
+
+  pub fn read_next_from_buffer(buffer: &[u8]) -> (Cache, u32, u32) {
+    unsafe { Self::read_next_from_buffer_avx(buffer) }
   }
 
   #[target_feature(enable = "avx2")]
