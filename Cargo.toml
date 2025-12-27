@@ -29,4 +29,5 @@ strip = "none"
 lto = "none"
 
 [dev-dependencies]
+brc = { git = "https://github.com/ClaytonKnittel/1brc", rev = "50a3fa9723972b70da37af6600b2804adbc87432" }
 googletest = "0.14.2"

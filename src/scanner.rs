@@ -183,15 +183,80 @@ impl<'a> Iterator for Scanner<'a> {
 
 #[cfg(test)]
 mod tests {
-  use googletest::{gtest, prelude::*};
 
-  use crate::temperature_reading::TemperatureReading;
+  use std::{
+    alloc::{alloc, dealloc, Layout},
+    slice,
+  };
+
+  use brc::build_input::{get_weather_stations, output_lines};
+  use googletest::{gtest, prelude::*};
+  use itertools::Itertools;
+  use rand::rng;
+
+  use crate::{error::BarseResult, temperature_reading::TemperatureReading};
 
   use super::Scanner;
+
+  const ALIGNMENT: usize = 32;
 
   #[repr(align(32))]
   struct AlignedBuffer<const N: usize> {
     buffer: [u8; N],
+  }
+
+  struct AlignedInput {
+    bytes: *mut u8,
+    len: usize,
+  }
+  impl AlignedInput {
+    fn new(src: &str) -> Self {
+      let len = src.len().next_multiple_of(ALIGNMENT);
+      let layout = Layout::from_size_align(len, ALIGNMENT).unwrap();
+      let bytes = unsafe { alloc(layout) };
+      unsafe {
+        libc::memset(bytes as *mut libc::c_void, 0, len);
+        bytes.copy_from(src.as_bytes().as_ptr(), src.len());
+      }
+      Self { bytes, len }
+    }
+
+    fn slice(&self) -> &[u8] {
+      unsafe { slice::from_raw_parts(self.bytes, self.len) }
+    }
+  }
+  impl Drop for AlignedInput {
+    fn drop(&mut self) {
+      let layout = Layout::from_size_align(self.len, ALIGNMENT).unwrap();
+      unsafe {
+        dealloc(self.bytes, layout);
+      }
+    }
+  }
+
+  fn random_input_file() -> BarseResult<AlignedInput> {
+    const WEATHER_STATIONS_PATH: &str = "data/weather_stations.csv";
+
+    let mut rng = rng();
+    let stations = get_weather_stations(WEATHER_STATIONS_PATH).unwrap();
+
+    Ok(AlignedInput::new(
+      &output_lines(&stations, 1000, 1000, &mut rng)?
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .join(""),
+    ))
+  }
+
+  fn simple_scanner_iter(buffer: &[u8]) -> impl Iterator<Item = (&str, TemperatureReading)> {
+    str::from_utf8(buffer)
+      .unwrap()
+      .split('\n')
+      .filter(|line| !line.starts_with(0 as char))
+      .map(|line| {
+        let (station, temp) = line.split_once(';').unwrap();
+        let temp = (temp.parse::<f32>().unwrap() * 10.).round() as i16;
+        (station, TemperatureReading::new(temp))
+      })
   }
 
   #[gtest]
@@ -391,5 +456,14 @@ mod tests {
       some((eq("P5"), eq(TemperatureReading::new(90))))
     );
     expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_against() {
+    let input = random_input_file().unwrap();
+
+    let scanner = Scanner::new(input.slice());
+    let simple_scanner = simple_scanner_iter(input.slice());
+    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
   }
 }
