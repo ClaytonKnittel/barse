@@ -18,7 +18,8 @@ pub struct InlineString {
 impl InlineString {
   pub fn new(contents: &str) -> Self {
     let mut s = Self::default();
-    s.initialize(contents);
+    s.bytes
+      .copy_from_slice(unsafe { &*(contents.as_ptr() as *const [u8; STRING_STORAGE_LEN]) });
     s
   }
 
