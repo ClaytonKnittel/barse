@@ -477,14 +477,7 @@ mod tests {
 
     let scanner = Scanner::new(input.slice());
     let simple_scanner = simple_scanner_iter(input.slice());
-    expect_eq!(
-      scanner
-        .inspect(|(city, temp)| {
-          println!("{city}: {temp}");
-        })
-        .collect_vec(),
-      simple_scanner.collect_vec()
-    );
+    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
   }
 
   #[gtest]
@@ -494,13 +487,6 @@ mod tests {
 
     let scanner = Scanner::new(input.slice());
     let simple_scanner = simple_scanner_iter(input.slice());
-    expect_eq!(
-      scanner
-        .inspect(|(city, temp)| {
-          println!("{city}: {temp}");
-        })
-        .collect_vec(),
-      simple_scanner.collect_vec()
-    );
+    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
   }
 }
