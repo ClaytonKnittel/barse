@@ -16,6 +16,14 @@ impl BuildHasher for BuildStringHash {
   }
 }
 
+fn read_str_to_u64_slow(s: &[u8]) -> u64 {
+  s.iter()
+    .take(8)
+    .enumerate()
+    .map(|(i, b)| (*b as u64) << (8 * i))
+    .sum()
+}
+
 /// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
 /// that byte and all higher-order bytes zeroed out.
 fn mask_char_and_above<const NEEDLE: u8>(v: u64) -> u64 {
@@ -42,11 +50,12 @@ pub struct StringHash(u64);
 impl Hasher for StringHash {
   fn write(&mut self, bytes: &[u8]) {
     let ptr = bytes.as_ptr();
-    if unlikely(unaligned_u64_read_would_cross_page_boundary(ptr)) {
-      todo!();
-    }
+    let v = if unlikely(unaligned_u64_read_would_cross_page_boundary(ptr)) {
+      read_str_to_u64_slow(bytes)
+    } else {
+      unsafe { read_unaligned(ptr as *const u64) }
+    };
 
-    let v = unsafe { read_unaligned(ptr as *const u64) };
     let v = mask_char_and_above::<b';'>(v);
     let v = compress_lower_nibbles(v);
     let v = scramble_u32(v);
