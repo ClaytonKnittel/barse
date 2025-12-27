@@ -1,16 +1,107 @@
-use crate::{scanner_x86_64::ScannerX86, temperature_reading::TemperatureReading};
+use std::slice;
+
+use crate::temperature_reading::TemperatureReading;
+
+#[cfg(not(target_feature = "avx"))]
+use crate::scanner_generic::ScannerGeneric as ScannerImpl;
+#[cfg(target_feature = "avx")]
+use crate::scanner_x86_64::ScannerX86 as ScannerImpl;
+
+pub trait ScannerImplT<'a> {
+  type Offset;
+
+  fn new<'b: 'a>(buffer: &'b [u8]) -> Self;
+
+  fn semicolon_mask(&self) -> Self::Offset;
+
+  fn newline_mask(&self) -> Self::Offset;
+
+  fn set_cur_offset(&mut self, offset: Self::Offset);
+
+  fn read_next_assuming_available(&mut self);
+
+  fn read_next(&mut self) -> bool;
+
+  fn find_next_station_name(&mut self) -> Option<&'a str> {
+    let station_start = self.cur_offset_to_ptr();
+    if self.semicolon_mask() == 0 {
+      if !self.read_next() {
+        return None;
+      }
+
+      // This can only occur if the next station name spanned the entire buffer
+      // read, 32 characters. Since the maximum station name is 50 characters,
+      // we are guaranteed to find the end of the station in the next region.
+      if self.scanner.semicolon_mask() == 0 && !self.scanner.read_next() {
+        return None;
+      }
+    }
+
+    let semicolon_offset = self.scanner.consume_next_semicolon();
+    let station_end = self.scanner.offset_to_ptr(semicolon_offset);
+    let station_name_slice = unsafe {
+      slice::from_raw_parts::<'a>(
+        station_start,
+        station_end.byte_offset_from_unsigned(station_start),
+      )
+    };
+    let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
+
+    self.scanner.set_cur_offset(semicolon_offset + 1);
+    if semicolon_offset == 31 {
+      self.read_next_assuming_available();
+      self.cur_offset = 0;
+    }
+
+    Some(station_name)
+  }
+}
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
-  scanner: ScannerX86<'a>,
+  scanner: ScannerImpl<'a>,
 }
 
 impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
     Self {
-      scanner: ScannerX86::new(buffer),
+      scanner: ScannerImpl::new(buffer),
     }
+  }
+
+  fn find_next_station_name(&mut self) -> Option<&'a str> {
+    let station_start = self.scanner.cur_offset_to_ptr();
+    if self.scanner.semicolon_mask() == 0 {
+      if !self.scanner.read_next() {
+        return None;
+      }
+
+      // This can only occur if the next station name spanned the entire buffer
+      // read, 32 characters. Since the maximum station name is 50 characters,
+      // we are guaranteed to find the end of the station in the next region.
+      if self.scanner.semicolon_mask() == 0 && !self.scanner.read_next() {
+        return None;
+      }
+    }
+
+    let semicolon_offset = self.scanner.consume_next_semicolon();
+    let station_end = self.scanner.offset_to_ptr(semicolon_offset);
+    let station_name_slice = unsafe {
+      slice::from_raw_parts::<'a>(
+        station_start,
+        station_end.byte_offset_from_unsigned(station_start),
+      )
+    };
+    let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
+
+    self.scanner.set_cur_offset(semicolon_offset + 1);
+    if semicolon_offset == 31 {
+      self.read_next_assuming_available();
+      self.cur_offset = 0;
+    }
+
+    Some(station_name)
   }
 }
 

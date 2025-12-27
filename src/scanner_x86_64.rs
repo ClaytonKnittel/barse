@@ -26,7 +26,7 @@ impl<'a> ScannerX86<'a> {
 
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len().is_multiple_of(32));
+    debug_assert!(buffer.len().is_multiple_of(Self::BYTES_PER_BUFFER as usize));
     let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(buffer) };
     Self {
       buffer,
@@ -53,8 +53,8 @@ impl<'a> ScannerX86<'a> {
   }
 
   fn read_next_assuming_available(&mut self) {
-    debug_assert!(self.buffer.len() > 32);
-    self.buffer = &self.buffer[32..];
+    debug_assert!(self.buffer.len() > Self::BYTES_PER_BUFFER);
+    self.buffer = &self.buffer[Self::BYTES_PER_BUFFER..];
     let (cache, semicolon_mask, newline_mask) = unsafe { Self::read_next_from_buffer(self.buffer) };
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
@@ -63,7 +63,7 @@ impl<'a> ScannerX86<'a> {
 
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == 32 {
+    if self.buffer.len() == Self::BYTES_PER_BUFFER {
       return false;
     }
     self.read_next_assuming_available();
@@ -121,7 +121,7 @@ impl<'a> ScannerX86<'a> {
     debug_assert!(self.newline_mask != 0);
     let newline_offset = self.newline_mask.trailing_zeros();
     self.cur_offset = newline_offset + 1;
-    debug_assert!(self.cur_offset < 32);
+    debug_assert!(self.cur_offset < Self::BYTES_PER_BUFFER);
   }
 
   fn unaligned_u64_read_would_cross_page_boundary(start_ptr: *const u8) -> bool {
@@ -141,7 +141,7 @@ impl<'a> ScannerX86<'a> {
       self.refresh_buffer_for_trailing_temp();
       unsafe {
         _mm256_store_si256(
-          temp_storage.0[32..].as_mut_ptr() as *mut __m256i,
+          temp_storage.0[Self::BYTES_PER_BUFFER..].as_mut_ptr() as *mut __m256i,
           self.cache,
         )
       };
@@ -160,7 +160,7 @@ impl<'a> ScannerX86<'a> {
   }
 
   #[target_feature(enable = "avx2")]
-  pub fn find_next_temp_reading_avx(&mut self) -> TemperatureReading {
+  fn find_next_temp_reading_avx(&mut self) -> TemperatureReading {
     let start_offset = self.cur_offset;
     let temp_start_ptr = self.offset_to_ptr(start_offset);
     let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
