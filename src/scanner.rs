@@ -480,8 +480,8 @@ mod tests {
   fn test_against_large() {
     let input = random_input_file(17, 400_000, 10_000).unwrap();
 
-    let results = Scanner::new(input.slice()).collect_vec();
-    let expected = simple_scanner_iter(input.slice()).collect_vec();
-    assert_eq!(results.len(), expected.len());
+    let scanner = Scanner::new(input.slice());
+    let simple_scanner = simple_scanner_iter(input.slice());
+    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
   }
 }
