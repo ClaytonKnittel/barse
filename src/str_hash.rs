@@ -69,9 +69,11 @@ impl Hasher for StringHash {
 
 #[cfg(test)]
 mod tests {
+  use std::hash::BuildHasher;
+
   use googletest::prelude::*;
 
-  use crate::str_hash::{compress_lower_nibbles, mask_char_and_above};
+  use crate::str_hash::{compress_lower_nibbles, mask_char_and_above, BuildStringHash};
 
   #[gtest]
   fn test_mask_char_and_above() {
@@ -90,6 +92,35 @@ mod tests {
     expect_eq!(
       compress_lower_nibbles(0x51_62_73_84_ab_cd_ef_09),
       0x1b_2d_3f_49
+    );
+  }
+
+  #[gtest]
+  fn test_str_hash_different_positions() {
+    #[repr(align(4096))]
+    struct PageAligned([u8; 8192]);
+
+    let s = b"test;123";
+    let mut page_aligned = PageAligned([0; 8192]);
+    // Aligned load
+    page_aligned.0[0..8].copy_from_slice(s);
+    // Cross cache line
+    page_aligned.0[60..68].copy_from_slice(s);
+    // Cross page boundary
+    page_aligned.0[4093..4101].copy_from_slice(s);
+
+    let expected_hash = BuildStringHash.hash_one("test;123");
+    expect_eq!(
+      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[0..]).unwrap()),
+      expected_hash
+    );
+    expect_eq!(
+      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[60..]).unwrap()),
+      expected_hash
+    );
+    expect_eq!(
+      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[4093..]).unwrap()),
+      expected_hash
     );
   }
 }
