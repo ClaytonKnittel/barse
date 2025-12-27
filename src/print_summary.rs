@@ -27,7 +27,7 @@ impl<'a> PartialOrd for WeatherStation<'a> {
 
 impl<'a> Ord for WeatherStation<'a> {
   fn cmp(&self, other: &Self) -> Ordering {
-    self.name.cmp(&other.name)
+    self.name.cmp(other.name)
   }
 }
 
