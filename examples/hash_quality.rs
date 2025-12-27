@@ -59,7 +59,7 @@ fn new_hash(bytes: &str) -> u64 {
     .enumerate()
     .map(|(i, b)| ((b & 0x0f) as u32) << (4 * i))
     .sum();
-  to_u32.wrapping_mul(0x01008021).reverse_bits() as u64
+  (to_u32.wrapping_mul(0x01008021) >> 16) as u64
 }
 
 fn run() -> BarseResult {
