@@ -43,3 +43,30 @@ impl Cache {
     Self::find_zero_bytes(zero_mask)
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use googletest::prelude::*;
+
+  use crate::scanner_cache::Cache;
+
+  #[gtest]
+  fn test_find_zero_bytes() {
+    expect_eq!(
+      Cache::find_zero_bytes(0x0101_0101_0101_0101_0101_0101_0101_0101),
+      0x0000
+    );
+    expect_eq!(
+      Cache::find_zero_bytes(0x0101_0101_0101_0101_0100_0101_0101_0101),
+      0x0040
+    );
+    expect_eq!(
+      Cache::find_zero_bytes(0x01ff_01ff_ffff_0101_ff00_01ff_0101_0101),
+      0x0040
+    );
+    expect_eq!(
+      Cache::find_zero_bytes(0x0100_0101_0000_0100_0101_0101_0000_0000),
+      0x4d0f,
+    );
+  }
+}
