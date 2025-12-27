@@ -81,7 +81,7 @@ impl<'a> Scanner<'a> {
         return false;
       }
     }
-    false
+    self.semicolon_mask != 0
   }
 
   fn find_next_station_name(&mut self) -> Option<&'a str> {
