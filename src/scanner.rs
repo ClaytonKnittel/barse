@@ -473,7 +473,7 @@ mod tests {
 
   #[gtest]
   fn test_against_small() {
-    let input = random_input_file(17, 10_000, 1_000).unwrap();
+    let input = random_input_file(13, 10_000, 1_000).unwrap();
 
     let scanner = Scanner::new(input.slice());
     let simple_scanner = simple_scanner_iter(input.slice());
