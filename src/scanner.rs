@@ -131,12 +131,23 @@ impl<'a> Scanner<'a> {
   }
 
   // #[cold]
-  fn parse_temp_from_copied_buffer(&self, start_offset: u32) -> TemperatureReading {
+  fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
     #[repr(align(64))]
     struct TempStorage([u8; 64]);
 
     let mut temp_storage = TempStorage([0; 64]);
     unsafe { _mm256_store_si256(temp_storage.0.as_mut_ptr() as *mut __m256i, self.cache) };
+
+    if self.newline_mask == 0 {
+      self.refresh_buffer_for_trailing_temp();
+      unsafe {
+        _mm256_store_si256(
+          temp_storage.0[32..].as_mut_ptr() as *mut __m256i,
+          self.cache,
+        )
+      };
+    }
+
     let encoding = unsafe {
       read_unaligned(
         temp_storage
@@ -155,19 +166,21 @@ impl<'a> Scanner<'a> {
     let temp_start_ptr = self.offset_to_ptr(start_offset);
     let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
-    if self.newline_mask == 0 {
-      self.refresh_buffer_for_trailing_temp();
-    }
+    // Slow path in case we are in danger of reading across a page boundary.
+    let reading = if Self::unaligned_u64_read_would_cross_page_boundary(start_ptr) {
+      self.parse_temp_from_copied_buffer(start_offset)
+    } else {
+      if self.newline_mask == 0 {
+        self.refresh_buffer_for_trailing_temp();
+      }
+
+      TemperatureReading::from_raw_ptr(temp_start_ptr)
+    };
 
     self.cur_offset = self.newline_mask.trailing_zeros() + 1;
     self.newline_mask &= self.newline_mask - 1;
 
-    // Slow path in case we are in danger of reading across a page boundary.
-    if Self::unaligned_u64_read_would_cross_page_boundary(start_ptr) {
-      return self.parse_temp_from_copied_buffer(start_offset);
-    }
-
-    TemperatureReading::from_raw_ptr(temp_start_ptr)
+    reading
   }
 }
 
@@ -234,14 +247,14 @@ mod tests {
     }
   }
 
-  fn random_input_file(seed: u64) -> BarseResult<AlignedInput> {
+  fn random_input_file(seed: u64, records: u64, unique_stations: u32) -> BarseResult<AlignedInput> {
     const WEATHER_STATIONS_PATH: &str = "data/weather_stations.csv";
 
     let mut rng = StdRng::seed_from_u64(seed);
     let stations = get_weather_stations(WEATHER_STATIONS_PATH).unwrap();
 
     Ok(AlignedInput::new(
-      &output_lines(&stations, 1000, 1000, &mut rng)?
+      &output_lines(&stations, records, unique_stations, &mut rng)?
         .collect::<std::result::Result<Vec<_>, _>>()?
         .join(""),
     ))
@@ -251,7 +264,7 @@ mod tests {
     str::from_utf8(buffer)
       .unwrap()
       .split('\n')
-      .filter(|line| !line.starts_with(0 as char))
+      .filter(|line| !line.is_empty() && !line.starts_with(0 as char))
       .map(|line| {
         let (station, temp) = line.split_once(';').unwrap();
         let temp = (temp.parse::<f32>().unwrap() * 10.).round() as i16;
@@ -459,11 +472,35 @@ mod tests {
   }
 
   #[gtest]
-  fn test_against() {
-    let input = random_input_file(13).unwrap();
+  fn test_against_small() {
+    let input = random_input_file(17, 10_000, 1_000).unwrap();
 
     let scanner = Scanner::new(input.slice());
     let simple_scanner = simple_scanner_iter(input.slice());
-    expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
+    expect_eq!(
+      scanner
+        .inspect(|(city, temp)| {
+          println!("{city}: {temp}");
+        })
+        .collect_vec(),
+      simple_scanner.collect_vec()
+    );
+  }
+
+  #[gtest]
+  #[ignore]
+  fn test_against_large() {
+    let input = random_input_file(17, 400_000, 10_000).unwrap();
+
+    let scanner = Scanner::new(input.slice());
+    let simple_scanner = simple_scanner_iter(input.slice());
+    expect_eq!(
+      scanner
+        .inspect(|(city, temp)| {
+          println!("{city}: {temp}");
+        })
+        .collect_vec(),
+      simple_scanner.collect_vec()
+    );
   }
 }
