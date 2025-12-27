@@ -4,7 +4,7 @@ use itertools::Itertools;
 use memmap2::{Advice, MmapOptions};
 
 use crate::{
-  error::BarseResult, scanner::Scanner, str_hash::BuildStringHash,
+  error::BarseResult, inline_string::InlineString, scanner::Scanner, str_hash::BuildStringHash,
   temperature_reading::TemperatureReading,
 };
 
@@ -51,7 +51,7 @@ impl Default for TemperatureSummary {
 }
 
 pub struct WeatherStation {
-  name: String,
+  name: InlineString,
   summary: TemperatureSummary,
 }
 
@@ -103,14 +103,14 @@ pub fn temperature_reading_summaries(
   Ok(
     Scanner::new(map_buffer)
       .try_fold(
-        HashMap::<String, TemperatureSummary, _>::with_hasher(BuildStringHash),
+        HashMap::<InlineString, TemperatureSummary, _>::with_hasher(BuildStringHash),
         |mut map, (station, temp)| -> BarseResult<_> {
           match map.get_mut(station) {
             Some(summary) => summary.add_reading(temp),
             None => {
               let mut summary = TemperatureSummary::default();
               summary.add_reading(temp);
-              map.insert(station.to_owned(), summary);
+              map.insert(InlineString::new(station), summary);
             }
           }
           Ok(map)
