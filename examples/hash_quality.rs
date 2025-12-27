@@ -9,7 +9,10 @@ use barse::{
   error::{BarseError, BarseResult},
   str_hash::BuildStringHash,
 };
-use rand::{rng, seq::IteratorRandom};
+use rand::{
+  rng,
+  seq::{IteratorRandom, SliceRandom},
+};
 
 fn compute_hash_quality<V, H>(values: &[V], mut hash: H, buckets: usize) -> f32
 where
@@ -44,8 +47,21 @@ fn weather_stations(path: &str) -> BarseResult<Vec<String>> {
       })
       .collect::<Result<Vec<_>, _>>()?
       .into_iter()
-      .choose_multiple(&mut rng, 1_000),
+      .choose_multiple(&mut rng, 10_000),
   )
+}
+
+fn new_hash(bytes: &str) -> u64 {
+  const PRODUCTS: [u8; 32] = [
+    23, 167, 13, 139, 109, 107, 59, 61, 223, 179, 3, 103, 43, 149, 233, 11, 37, 101, 97, 251, 229,
+    83, 157, 131, 53, 163, 241, 73, 197, 19, 17, 191,
+  ];
+  bytes
+    .as_bytes()
+    .iter()
+    .zip(PRODUCTS.iter().cycle())
+    .map(|(b, p)| (b ^ p) as u64)
+    .fold(1, |acc, h| acc.wrapping_add(h))
 }
 
 fn run() -> BarseResult {
@@ -81,6 +97,11 @@ fn run() -> BarseResult {
       |station| { BuildStringHash.hash_one(station) },
       cap
     )
+  );
+
+  println!(
+    "New hash quality: {}",
+    compute_hash_quality(&weather_stations, |station| { new_hash(station) }, cap)
   );
   Ok(())
 }
