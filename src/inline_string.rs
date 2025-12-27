@@ -80,8 +80,7 @@ impl Borrow<str> for InlineString {
 
 impl Hash for InlineString {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    debug_assert!(self.bytes[self.len..].iter().all(|b| *b == 0));
-    state.write(self.value().as_bytes());
+    self.value().hash(state);
   }
 }
 
@@ -93,11 +92,20 @@ impl Display for InlineString {
 
 #[cfg(test)]
 mod tests {
-  use std::cmp::Ordering;
+  use std::{cmp::Ordering, hash::BuildHasher};
 
   use googletest::{expect_that, gtest, prelude::*};
 
+  use crate::str_hash::BuildStringHash;
+
   use super::InlineString;
+
+  #[gtest]
+  fn test_construction() {
+    let str1 = "testabcd";
+    let i = InlineString::new(str::from_utf8(&str1.as_bytes()[..4]).unwrap());
+    expect_eq!(i.value(), "test");
+  }
 
   #[gtest]
   fn test_cmp() {
@@ -107,5 +115,35 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
     expect_true!(i1 == i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
+    expect_eq!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+  }
+
+  #[gtest]
+  fn test_cmp_ne_diff_length() {
+    let str1 = "testabcd";
+    let i1 = InlineString::new(str::from_utf8(&str1.as_bytes()[..4]).unwrap());
+    let i2 = InlineString::new(str::from_utf8(&str1.as_bytes()[..5]).unwrap());
+    expect_true!(i1 != i2);
+    expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
+    expect_ne!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+  }
+
+  #[gtest]
+  fn test_cmp_ne_chars() {
+    let str1 = "test";
+    let str2 = "tesy";
+    let i1 = InlineString::new(str1);
+    let i2 = InlineString::new(str2);
+    expect_true!(i1 != i2);
+    expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
+    expect_ne!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+  }
+
+  #[gtest]
+  fn test_eq_hash_with_str_slice() {
+    expect_eq!(
+      BuildStringHash.hash_one(InlineString::new("word")),
+      BuildStringHash.hash_one("word")
+    );
   }
 }
