@@ -14,14 +14,14 @@ unsafe fn round_up_to_32b_boundary(buffer: &[u8]) -> &[u8] {
 
 pub fn build_temperature_reading_table(
   input_path: &str,
-) -> BarseResult<Box<WeatherStationTable<TABLE_SIZE, BuildStringHash>>> {
+) -> BarseResult<WeatherStationTable<TABLE_SIZE, BuildStringHash>> {
   let file = File::open(input_path)?;
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;
   let map_buffer = unsafe { round_up_to_32b_boundary(&map) };
 
   Scanner::new(map_buffer).try_fold(
-    Box::new(WeatherStationTable::with_hasher(BuildStringHash)),
+    WeatherStationTable::with_hasher(BuildStringHash),
     |mut map, (station, temp)| -> BarseResult<_> {
       map.add_reading(station, temp);
       Ok(map)

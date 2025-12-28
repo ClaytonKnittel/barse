@@ -9,6 +9,7 @@ const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 
+#[derive(Clone)]
 #[repr(C, align(8))]
 pub struct InlineString {
   bytes: [u8; STRING_STORAGE_LEN],
@@ -42,7 +43,7 @@ impl InlineString {
     unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len as usize)) }
   }
 
-  fn cmp_slice(&self) -> &[u8] {
+  fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 }
