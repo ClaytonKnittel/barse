@@ -9,6 +9,7 @@ use crate::{
 
 const M256_BYTES: usize = 32;
 
+#[cold]
 fn cmp_str_slow(inline_str: &InlineString, other: &str) -> bool {
   inline_str.value_str() == other
 }
