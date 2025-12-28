@@ -24,7 +24,7 @@ where
       let mut bucket_idx = h as usize % buckets.len();
       let mut count = 1;
       while let Some(other_v) = buckets[bucket_idx] {
-        println!("Collision for {} with {}", v, other_v);
+        // println!("Collision for {} with {}", v, other_v);
         bucket_idx = (bucket_idx + 1) % buckets.len();
         count += 1;
       }
@@ -83,6 +83,18 @@ fn new_hash(bytes: &str) -> u64 {
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
   const CAP: usize = 65536;
+
+  const BELOW: usize = 32;
+  println!(
+    "Pct below {BELOW}: {}",
+    weather_stations
+      .iter()
+      .filter(|station| station.len() <= BELOW)
+      .count() as f32
+      / weather_stations.len() as f32
+      * (4097 - BELOW) as f32
+      / 4096.
+  );
 
   println!(
     "Default hash quality: {}",
