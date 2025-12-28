@@ -1,4 +1,7 @@
-use std::{fmt::Debug, hash::BuildHasher};
+use std::{
+  fmt::Debug,
+  hash::{BuildHasher, Hasher},
+};
 
 use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
 
@@ -123,8 +126,14 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
     self.find_entry(station).add_reading(reading);
   }
 
+  fn station_hash(&self, station: &str) -> u64 {
+    let mut hasher = self.hasher.build_hasher();
+    hasher.write(station.as_bytes());
+    hasher.finish()
+  }
+
   fn station_index(&self, station: &str) -> usize {
-    self.hasher.hash_one(station.as_bytes()) as usize % SIZE
+    self.station_hash(station) as usize % SIZE
   }
 
   fn find_entry(&mut self, station: &str) -> &mut Entry {

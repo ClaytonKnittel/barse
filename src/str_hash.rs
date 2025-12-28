@@ -75,11 +75,17 @@ impl Hasher for StringHash {
 
 #[cfg(test)]
 mod tests {
-  use std::hash::BuildHasher;
+  use std::hash::{BuildHasher, Hasher};
 
   use googletest::prelude::*;
 
   use crate::str_hash::{compress_lower_nibbles, mask_char_and_above, BuildStringHash};
+
+  fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut hasher = BuildStringHash.build_hasher();
+    hasher.write(bytes);
+    hasher.finish()
+  }
 
   #[gtest]
   fn test_mask_char_and_above() {
@@ -115,18 +121,9 @@ mod tests {
     // Cross page boundary
     page_aligned.0[4093..4101].copy_from_slice(s);
 
-    let expected_hash = BuildStringHash.hash_one("test;123");
-    expect_eq!(
-      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[0..]).unwrap()),
-      expected_hash
-    );
-    expect_eq!(
-      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[60..]).unwrap()),
-      expected_hash
-    );
-    expect_eq!(
-      BuildStringHash.hash_one(str::from_utf8(&page_aligned.0[4093..]).unwrap()),
-      expected_hash
-    );
+    let expected_hash = hash_bytes("test;123".as_bytes());
+    expect_eq!(hash_bytes(&page_aligned.0[0..]), expected_hash);
+    expect_eq!(hash_bytes(&page_aligned.0[60..]), expected_hash);
+    expect_eq!(hash_bytes(&page_aligned.0[4093..]), expected_hash);
   }
 }

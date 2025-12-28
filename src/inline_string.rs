@@ -89,7 +89,7 @@ impl Borrow<[u8]> for InlineString {
 
 impl Hash for InlineString {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    self.value().hash(state);
+    state.write(self.value());
   }
 }
 
@@ -101,7 +101,10 @@ impl Display for InlineString {
 
 #[cfg(test)]
 mod tests {
-  use std::{cmp::Ordering, hash::BuildHasher};
+  use std::{
+    cmp::Ordering,
+    hash::{BuildHasher, Hasher},
+  };
 
   use googletest::{expect_that, gtest, prelude::*};
 
@@ -149,10 +152,12 @@ mod tests {
   }
 
   #[gtest]
-  fn test_eq_hash_with_str_slice() {
+  fn test_eq_hash_with_u8_slice() {
+    let mut u8_hash = BuildStringHash.build_hasher();
+    u8_hash.write("word;".as_bytes());
     expect_eq!(
       BuildStringHash.hash_one(InlineString::new("word")),
-      BuildStringHash.hash_one("word")
+      u8_hash.finish()
     );
   }
 }
