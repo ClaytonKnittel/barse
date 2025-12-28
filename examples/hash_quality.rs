@@ -64,20 +64,20 @@ fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
 }
 
 fn compress_lower_nibbles(v: u128) -> u64 {
-  const LOWER_NIBBLE: u64 = 0x0f0f_0f0f_0f0f_0f0f;
-  (v as u64 & LOWER_NIBBLE) | ((v >> 60) as u64 & !LOWER_NIBBLE)
+  // const LOWER_NIBBLE: u64 = 0x0f0f_0f0f_0f0f_0f0f;
+  v as u64 ^ (v >> 64) as u64
 }
 
-fn scramble_u32(v: u32) -> u32 {
-  const MAGIC: u32 = 0x00400821;
-  v.wrapping_mul(MAGIC).reverse_bits()
+fn scramble_u64(v: u64) -> u64 {
+  const MAGIC: u64 = 0x20000400020001;
+  v.wrapping_mul(MAGIC) >> 48
 }
 
 fn new_hash(bytes: &str) -> u64 {
   let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
   let v = mask_char_and_above::<b';'>(v);
   let v = compress_lower_nibbles(v);
-  (scramble_u32(v as u32) ^ scramble_u32((v >> 32) as u32)) as u64
+  scramble_u64(v)
 }
 
 fn run() -> BarseResult {

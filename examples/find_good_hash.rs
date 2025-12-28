@@ -60,29 +60,24 @@ fn nibble_mush(bytes: &str) -> u32 {
     .sum()
 }
 
-fn mask_char_and_above<const NEEDLE: u8>(v: u64) -> u64 {
-  const LSB: u64 = 0x0101_0101_0101_0101;
-  let search_mask = (NEEDLE as u64) * LSB;
+fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
+  const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
+  let search_mask = (NEEDLE as u128) * LSB;
   let zeroed_needles = v ^ search_mask;
   let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
   let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
   v & keep_mask
 }
 
-fn compress_lower_nibbles(v: u64) -> u32 {
-  const LOWER_NIBBLE: u32 = 0x0f0f_0f0f;
-  (v as u32 & LOWER_NIBBLE) | ((v >> 28) as u32 & !LOWER_NIBBLE)
+fn scramble_u64(v: u64, p: u64) -> u64 {
+  v.wrapping_mul(p) >> 48
 }
 
-fn scramble_u32(v: u32, p: u32) -> u32 {
-  v.wrapping_mul(p).reverse_bits()
-}
-
-fn new_hash(bytes: &str, p: u32) -> u64 {
-  let v = unsafe { read_unaligned(bytes.as_ptr() as *const u64) };
+fn new_hash(bytes: &str, p: u64) -> u64 {
+  let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
   let v = mask_char_and_above::<b';'>(v);
-  let v = compress_lower_nibbles(v);
-  scramble_u32(v, p) as u64
+  let v = v as u64 ^ (v >> 64) as u64;
+  scramble_u64(v, p) as u64
 }
 
 fn run() -> BarseResult {
@@ -90,7 +85,7 @@ fn run() -> BarseResult {
   const CAP: usize = 65536;
 
   let mut best_quality = f32::MAX;
-  for (b1, b2, b3, b4) in (0..32).tuple_combinations() {
+  for (b1, b2, b3, b4) in (0..64).tuple_combinations() {
     let p = (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4);
     let hash_fn = |bytes: &String| new_hash(bytes, p);
     let quality = compute_hash_quality(&weather_stations, hash_fn, CAP);
