@@ -65,7 +65,7 @@ impl Entry {
   }
 
   fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.value_str() == station) {
+    if likely(self.key.eq_foreign_str(station)) {
       true
     } else if self.is_default() {
       self.initialize(station);
