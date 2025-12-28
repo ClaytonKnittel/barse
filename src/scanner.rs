@@ -1,6 +1,8 @@
 use std::{ptr::read_unaligned, slice};
 
-use crate::temperature_reading::TemperatureReading;
+use crate::{
+  temperature_reading::TemperatureReading, util::unaligned_u64_read_would_cross_page_boundary,
+};
 
 #[cfg(not(target_feature = "avx2"))]
 use crate::scanner_cache::Cache;
@@ -124,11 +126,6 @@ impl<'a> Scanner<'a> {
     debug_assert!(self.cur_offset < 32);
   }
 
-  fn unaligned_u64_read_would_cross_page_boundary(start_ptr: *const u8) -> bool {
-    const PAGE_SIZE: usize = 4096;
-    (start_ptr as usize) % PAGE_SIZE > PAGE_SIZE - (u64::BITS as usize / 8)
-  }
-
   // #[cold]
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
     #[repr(align(64))]
@@ -162,7 +159,7 @@ impl<'a> Scanner<'a> {
     let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
     // Slow path in case we are in danger of reading across a page boundary.
-    let reading = if Self::unaligned_u64_read_would_cross_page_boundary(start_ptr) {
+    let reading = if unaligned_u64_read_would_cross_page_boundary(start_ptr) {
       self.parse_temp_from_copied_buffer(start_offset)
     } else {
       if self.newline_mask == 0 {

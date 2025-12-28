@@ -62,7 +62,7 @@ impl Entry {
   }
 
   fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.value() == station) {
+    if likely(self.key.value_str() == station) {
       true
     } else if self.is_default() {
       self.initialize(station);
@@ -77,7 +77,7 @@ impl Entry {
   }
 
   fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
-    (self.key.value(), &self.temp_summary)
+    (self.key.value_str(), &self.temp_summary)
   }
 }
 
@@ -124,7 +124,7 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   }
 
   fn station_index(&self, station: &str) -> usize {
-    self.hasher.hash_one(station) as usize % SIZE
+    self.hasher.hash_one(station.as_bytes()) as usize % SIZE
   }
 
   fn find_entry(&mut self, station: &str) -> &mut Entry {
