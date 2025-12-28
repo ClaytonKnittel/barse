@@ -39,7 +39,7 @@ impl<'a> Scanner<'a> {
 
   fn read_next_assuming_available(&mut self) {
     debug_assert!(self.buffer.len() > Cache::bytes_per_buffer());
-    self.buffer = &self.buffer[Cache::bytes_per_buffer()..];
+    self.buffer = unsafe { self.buffer.get_unchecked(Cache::bytes_per_buffer()..) };
     let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(self.buffer);
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
