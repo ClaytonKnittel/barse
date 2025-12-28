@@ -26,7 +26,9 @@ fn foreign_str_unknown_bytes_mask(len: usize) -> __m256i {
     0, 0, 0, 0, 0, 0, 0, 0, //
     0, 0, 0, 0, 0, 0, 0,
   ];
-  unsafe { _mm256_loadu_si256(MASK_BYTES[M256_BYTES - len..].as_ptr() as *const __m256i) }
+  unsafe {
+    _mm256_loadu_si256(MASK_BYTES.get_unchecked(M256_BYTES - len..).as_ptr() as *const __m256i)
+  }
 }
 
 #[target_feature(enable = "avx2")]
