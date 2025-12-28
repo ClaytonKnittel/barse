@@ -64,7 +64,8 @@ fn new_hash(bytes: &str) -> u64 {
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const CAP: usize = 65536;
+  // const CAP: usize = 65536;
+  const CAP: usize = 131072;
 
   println!(
     "Default hash quality: {}",
@@ -92,7 +93,11 @@ fn run() -> BarseResult {
     "My hash quality: {}",
     compute_hash_quality(
       &weather_stations,
-      |station| { BuildStringHash.hash_one(station) },
+      |station| {
+        let mut hasher = BuildStringHash.build_hasher();
+        hasher.write(station.as_bytes());
+        hasher.finish()
+      },
       CAP
     )
   );
