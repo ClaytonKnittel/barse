@@ -9,6 +9,7 @@ const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 
+#[derive(Clone)]
 #[repr(C, align(8))]
 pub struct InlineString {
   bytes: [u8; STRING_STORAGE_LEN],
