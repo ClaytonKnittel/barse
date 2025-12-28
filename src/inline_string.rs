@@ -5,6 +5,9 @@ use std::{
   hash::{Hash, Hasher},
 };
 
+#[cfg(target_feature = "avx2")]
+use crate::str_cmp_x86::inline_str_eq_foreign_str;
+
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
@@ -25,6 +28,10 @@ impl InlineString {
 
   pub fn is_default(&self) -> bool {
     self.len == 0
+  }
+
+  pub fn len(&self) -> usize {
+    self.len as usize
   }
 
   pub fn initialize(&mut self, contents: &str) {
@@ -49,6 +56,16 @@ impl InlineString {
 
   fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
+  }
+
+  #[cfg(target_feature = "avx2")]
+  pub fn eq_foreign_str(&self, other: &str) -> bool {
+    inline_str_eq_foreign_str(self, other)
+  }
+
+  #[cfg(not(target_feature = "avx2"))]
+  pub fn eq_foreign_str(&self, other: &str) -> bool {
+    self.value_str() == other
   }
 }
 
