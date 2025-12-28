@@ -43,7 +43,7 @@ impl InlineString {
     unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len as usize)) }
   }
 
-  fn cmp_slice(&self) -> &[u8] {
+  fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 }
