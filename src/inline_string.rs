@@ -5,6 +5,7 @@ use std::{
   hash::{Hash, Hasher},
 };
 
+#[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
 
 const MAX_STRING_LEN: usize = 50;
@@ -57,8 +58,14 @@ impl InlineString {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 
+  #[cfg(target_feature = "avx2")]
   pub fn eq_foreign_str(&self, other: &str) -> bool {
     inline_str_eq_foreign_str(self, other)
+  }
+
+  #[cfg(not(target_feature = "avx2"))]
+  pub fn eq_foreign_str(&self, other: &str) -> bool {
+    self.value_str() == other
   }
 }
 
