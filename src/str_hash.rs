@@ -3,7 +3,7 @@ use std::{
   ptr::read_unaligned,
 };
 
-use crate::util::{unaligned_u64_read_would_cross_page_boundary, unlikely};
+use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
 
 #[derive(Default)]
 pub struct BuildStringHash;
@@ -16,28 +16,28 @@ impl BuildHasher for BuildStringHash {
   }
 }
 
-fn read_str_to_u64_slow(s: &[u8]) -> u64 {
+fn read_str_to_u128_slow(s: &[u8]) -> u128 {
   s.iter()
-    .take(8)
+    .take(16)
     .enumerate()
-    .map(|(i, b)| (*b as u64) << (8 * i))
+    .map(|(i, b)| (*b as u128) << (8 * i))
     .sum()
 }
 
 /// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
 /// that byte and all higher-order bytes zeroed out.
-fn mask_char_and_above<const NEEDLE: u8>(v: u64) -> u64 {
-  const LSB: u64 = 0x0101_0101_0101_0101;
-  let search_mask = (NEEDLE as u64) * LSB;
+fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
+  const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
+  let search_mask = (NEEDLE as u128) * LSB;
   let zeroed_needles = v ^ search_mask;
   let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
   let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
   v & keep_mask
 }
 
-fn compress_lower_nibbles(v: u64) -> u32 {
-  const LOWER_NIBBLE: u32 = 0x0f0f_0f0f;
-  (v as u32 & LOWER_NIBBLE) | ((v >> 28) as u32 & !LOWER_NIBBLE)
+fn compress_lower_nibbles(v: u128) -> u64 {
+  const LOWER_NIBBLE: u64 = 0x0f0f_0f0f_0f0f_0f0f;
+  (v as u64 & LOWER_NIBBLE) | ((v >> 60) as u64 & !LOWER_NIBBLE)
 }
 
 fn scramble_u32(v: u32) -> u32 {
@@ -52,15 +52,15 @@ impl Hasher for StringHash {
     debug_assert_eq!(self.0, 0);
 
     let ptr = bytes.as_ptr();
-    let v = if unlikely(unaligned_u64_read_would_cross_page_boundary(ptr)) {
-      read_str_to_u64_slow(bytes)
+    let v = if unlikely(unaligned_u128_read_would_cross_page_boundary(ptr)) {
+      read_str_to_u128_slow(bytes)
     } else {
-      unsafe { read_unaligned(ptr as *const u64) }
+      unsafe { read_unaligned(ptr as *const u128) }
     };
 
     let v = mask_char_and_above::<b';'>(v);
     let v = compress_lower_nibbles(v);
-    let v = scramble_u32(v);
+    let v = scramble_u32(v as u32) ^ scramble_u32((v >> 32) as u32);
     self.0 = v as u64
   }
 
