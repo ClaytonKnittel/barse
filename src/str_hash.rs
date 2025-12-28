@@ -1,9 +1,4 @@
-use std::{
-  hash::{BuildHasher, Hasher},
-  ptr::read_unaligned,
-};
-
-use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
+use std::hash::{BuildHasher, Hasher};
 
 #[derive(Default)]
 pub struct BuildStringHash;
@@ -16,40 +11,41 @@ impl BuildHasher for BuildStringHash {
   }
 }
 
-fn read_str_to_u128_slow(s: &[u8]) -> u128 {
-  s.iter()
-    .take(16)
-    .enumerate()
-    .map(|(i, b)| (*b as u128) << (8 * i))
-    .sum()
-}
+#[cfg(any(test, target_feature = "avx2"))]
+mod hasher {
+  use std::ptr::read_unaligned;
 
-/// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
-/// that byte and all higher-order bytes zeroed out.
-fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
-  const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
-  let search_mask = (NEEDLE as u128) * LSB;
-  let zeroed_needles = v ^ search_mask;
-  let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
-  let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
-  v & keep_mask
-}
+  use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
 
-fn compress_lower_nibbles(v: u128) -> u64 {
-  v as u64 ^ (v >> 64) as u64
-}
+  fn read_str_to_u128_slow(s: &[u8]) -> u128 {
+    s.iter()
+      .take(16)
+      .enumerate()
+      .map(|(i, b)| (*b as u128) << (8 * i))
+      .sum()
+  }
 
-fn scramble_u64(v: u64) -> u64 {
-  const MAGIC: u64 = 0x20000400020001;
-  v.wrapping_mul(MAGIC) >> 48
-}
+  /// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
+  /// that byte and all higher-order bytes zeroed out.
+  fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
+    const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
+    let search_mask = (NEEDLE as u128) * LSB;
+    let zeroed_needles = v ^ search_mask;
+    let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
+    let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
+    v & keep_mask
+  }
 
-pub struct StringHash(u64);
+  fn compress_lower_nibbles(v: u128) -> u64 {
+    v as u64 ^ (v >> 64) as u64
+  }
 
-impl Hasher for StringHash {
-  fn write(&mut self, bytes: &[u8]) {
-    debug_assert_eq!(self.0, 0);
+  fn scramble_u64(v: u64) -> u64 {
+    const MAGIC: u64 = 0x20000400020001;
+    v.wrapping_mul(MAGIC) >> 48
+  }
 
+  pub fn str_hash_generic(bytes: &[u8]) -> u64 {
     let ptr = bytes.as_ptr();
     let v = if unlikely(unaligned_u128_read_would_cross_page_boundary(ptr)) {
       read_str_to_u128_slow(bytes)
@@ -59,8 +55,52 @@ impl Hasher for StringHash {
 
     let v = mask_char_and_above::<b';'>(v);
     let v = compress_lower_nibbles(v);
-    let v = scramble_u64(v);
-    self.0 = v as u64
+    scramble_u64(v)
+  }
+
+  #[cfg(test)]
+  mod tests {
+    use googletest::prelude::*;
+
+    use crate::str_hash::hasher::{compress_lower_nibbles, mask_char_and_above};
+
+    #[gtest]
+    fn test_mask_char_and_above() {
+      expect_eq!(
+        mask_char_and_above::<0x12>(0x10_11_12_13_14_15_16_17),
+        0x00_00_00_13_14_15_16_17
+      );
+      expect_eq!(
+        mask_char_and_above::<0x20>(0x10_11_12_13_14_15_16_17),
+        0x10_11_12_13_14_15_16_17
+      );
+    }
+
+    #[gtest]
+    fn test_compress_lower_nibbles() {
+      expect_eq!(
+        compress_lower_nibbles(0x51_62_73_84_ab_cd_ef_09),
+        0x1b_2d_3f_49
+      );
+    }
+  }
+}
+
+pub struct StringHash(u64);
+
+impl Hasher for StringHash {
+  #[inline(never)]
+  #[cfg(target_feature = "avx2")]
+  fn write(&mut self, bytes: &[u8]) {
+    debug_assert_eq!(self.0, 0);
+    self.0 = crate::str_hash_x86::str_hash_fast(bytes);
+  }
+
+  #[inline(never)]
+  #[cfg(not(target_feature = "avx2"))]
+  fn write(&mut self, bytes: &[u8]) {
+    debug_assert_eq!(self.0, 0);
+    self.0 = hasher::str_hash_generic(bytes);
   }
 
   fn write_u8(&mut self, _: u8) {
@@ -77,33 +117,19 @@ mod tests {
   use std::hash::{BuildHasher, Hasher};
 
   use googletest::prelude::*;
+  use itertools::Itertools;
+  use rand::{
+    distr::{Distribution, Uniform},
+    rngs::StdRng,
+    Rng, SeedableRng,
+  };
 
-  use crate::str_hash::{compress_lower_nibbles, mask_char_and_above, BuildStringHash};
+  use crate::str_hash::{hasher, BuildStringHash};
 
   fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = BuildStringHash.build_hasher();
     hasher.write(bytes);
     hasher.finish()
-  }
-
-  #[gtest]
-  fn test_mask_char_and_above() {
-    expect_eq!(
-      mask_char_and_above::<0x12>(0x10_11_12_13_14_15_16_17),
-      0x00_00_00_13_14_15_16_17
-    );
-    expect_eq!(
-      mask_char_and_above::<0x20>(0x10_11_12_13_14_15_16_17),
-      0x10_11_12_13_14_15_16_17
-    );
-  }
-
-  #[gtest]
-  fn test_compress_lower_nibbles() {
-    expect_eq!(
-      compress_lower_nibbles(0x51_62_73_84_ab_cd_ef_09),
-      0x1b_2d_3f_49
-    );
   }
 
   #[gtest]
@@ -124,5 +150,33 @@ mod tests {
     expect_eq!(hash_bytes(&page_aligned.0[0..]), expected_hash);
     expect_eq!(hash_bytes(&page_aligned.0[60..]), expected_hash);
     expect_eq!(hash_bytes(&page_aligned.0[4093..]), expected_hash);
+  }
+
+  #[gtest]
+  fn test_str_hash_fuzz() {
+    let mut rng = StdRng::seed_from_u64(0x4214931);
+    let distr = Uniform::new(2, 50).unwrap();
+
+    fn rand_u8_excluding_semicolon<R: Rng>(rng: &mut R) -> u8 {
+      let distr = Uniform::new(0, 254).unwrap();
+      let v = distr.sample(rng);
+      if v >= b';' {
+        v + 1
+      } else {
+        v
+      }
+    }
+
+    for _ in 0..10 {
+      let rand_len = distr.sample(&mut rng);
+      let str_bytes = (0..rand_len - 1)
+        .map(|_| rand_u8_excluding_semicolon(&mut rng))
+        .chain(std::iter::once(b';'))
+        .collect_vec();
+
+      let fast_hash = hash_bytes(&str_bytes);
+      let slow_hash = hasher::str_hash_generic(&str_bytes);
+      assert_eq!(fast_hash, slow_hash);
+    }
   }
 }
