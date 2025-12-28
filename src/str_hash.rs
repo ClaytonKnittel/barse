@@ -12,7 +12,7 @@ impl BuildHasher for BuildStringHash {
 }
 
 #[cfg(any(test, not(target_feature = "avx2")))]
-mod hasher {
+mod generic_hasher {
   use std::ptr::read_unaligned;
 
   use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
@@ -45,7 +45,7 @@ mod hasher {
     v.wrapping_mul(MAGIC) >> 48
   }
 
-  pub fn str_hash_generic(bytes: &[u8]) -> u64 {
+  pub fn str_hash(bytes: &[u8]) -> u64 {
     let ptr = bytes.as_ptr();
     let v = if unlikely(unaligned_u128_read_would_cross_page_boundary(ptr)) {
       read_str_to_u128_slow(bytes)
@@ -62,7 +62,7 @@ mod hasher {
   mod tests {
     use googletest::prelude::*;
 
-    use crate::str_hash::hasher::mask_char_and_above;
+    use crate::str_hash::generic_hasher::mask_char_and_above;
 
     #[gtest]
     fn test_mask_char_and_above() {
@@ -92,7 +92,7 @@ impl Hasher for StringHash {
   #[cfg(not(target_feature = "avx2"))]
   fn write(&mut self, bytes: &[u8]) {
     debug_assert_eq!(self.0, 0);
-    self.0 = hasher::str_hash_generic(bytes);
+    self.0 = generic_hasher::str_hash(bytes);
   }
 
   fn write_u8(&mut self, _: u8) {
@@ -116,7 +116,7 @@ mod tests {
     Rng, SeedableRng,
   };
 
-  use crate::str_hash::{hasher, BuildStringHash};
+  use crate::str_hash::{generic_hasher, BuildStringHash};
 
   fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = BuildStringHash.build_hasher();
@@ -138,10 +138,10 @@ mod tests {
     // Cross page boundary
     page_aligned.0[4093..4101].copy_from_slice(s);
 
-    let expected_hash = hash_bytes("test;123".as_bytes());
-    expect_eq!(hash_bytes(&page_aligned.0[0..]), expected_hash);
-    expect_eq!(hash_bytes(&page_aligned.0[60..]), expected_hash);
-    expect_eq!(hash_bytes(&page_aligned.0[4093..]), expected_hash);
+    let expected_hash = hash_bytes(&"test;123".as_bytes()[0..4]);
+    expect_eq!(hash_bytes(&page_aligned.0[0..4]), expected_hash);
+    expect_eq!(hash_bytes(&page_aligned.0[60..64]), expected_hash);
+    expect_eq!(hash_bytes(&page_aligned.0[4093..4097]), expected_hash);
   }
 
   #[gtest]
@@ -161,13 +161,13 @@ mod tests {
 
     for _ in 0..10 {
       let rand_len = distr.sample(&mut rng);
-      let str_bytes = (0..rand_len - 1)
+      let str_bytes = (0..rand_len)
         .map(|_| rand_u8_excluding_semicolon(&mut rng))
         .chain(std::iter::once(b';'))
         .collect_vec();
 
-      let fast_hash = hash_bytes(&str_bytes);
-      let slow_hash = hasher::str_hash_generic(&str_bytes);
+      let fast_hash = hash_bytes(&str_bytes[..rand_len]);
+      let slow_hash = generic_hasher::str_hash(&str_bytes[..rand_len]);
       assert_eq!(fast_hash, slow_hash);
     }
   }
