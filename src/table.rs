@@ -1,4 +1,7 @@
-use std::{fmt::Debug, hash::BuildHasher};
+use std::{
+  fmt::Debug,
+  hash::{BuildHasher, Hasher},
+};
 
 use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
 
@@ -62,7 +65,7 @@ impl Entry {
   }
 
   fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.value() == station) {
+    if likely(self.key.value_str() == station) {
       true
     } else if self.is_default() {
       self.initialize(station);
@@ -77,7 +80,7 @@ impl Entry {
   }
 
   fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
-    (self.key.value(), &self.temp_summary)
+    (self.key.value_str(), &self.temp_summary)
   }
 }
 
@@ -123,8 +126,14 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
     self.find_entry(station).add_reading(reading);
   }
 
+  fn station_hash(&self, station: &str) -> u64 {
+    let mut hasher = self.hasher.build_hasher();
+    hasher.write(station.as_bytes());
+    hasher.finish()
+  }
+
   fn station_index(&self, station: &str) -> usize {
-    self.hasher.hash_one(station) as usize % SIZE
+    self.station_hash(station) as usize % SIZE
   }
 
   fn find_entry(&mut self, station: &str) -> &mut Entry {

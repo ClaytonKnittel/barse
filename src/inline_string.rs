@@ -39,8 +39,12 @@ impl InlineString {
     self.len = contents.len() as u32;
   }
 
-  pub fn value(&self) -> &str {
-    unsafe { str::from_utf8_unchecked(self.bytes.get_unchecked(..self.len as usize)) }
+  pub fn value_str(&self) -> &str {
+    unsafe { str::from_utf8_unchecked(self.value()) }
+  }
+
+  fn value(&self) -> &[u8] {
+    unsafe { self.bytes.get_unchecked(..self.len as usize) }
   }
 
   fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
@@ -77,27 +81,30 @@ impl Ord for InlineString {
   }
 }
 
-impl Borrow<str> for InlineString {
-  fn borrow(&self) -> &str {
+impl Borrow<[u8]> for InlineString {
+  fn borrow(&self) -> &[u8] {
     self.value()
   }
 }
 
 impl Hash for InlineString {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    self.value().hash(state);
+    state.write(self.value());
   }
 }
 
 impl Display for InlineString {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.value())
+    write!(f, "{}", self.value_str())
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use std::{cmp::Ordering, hash::BuildHasher};
+  use std::{
+    cmp::Ordering,
+    hash::{BuildHasher, Hasher},
+  };
 
   use googletest::{expect_that, gtest, prelude::*};
 
@@ -109,7 +116,7 @@ mod tests {
   fn test_construction() {
     let str1 = "testabcd";
     let i = InlineString::new(str::from_utf8(&str1.as_bytes()[..4]).unwrap());
-    expect_eq!(i.value(), "test");
+    expect_eq!(i.value_str(), "test");
   }
 
   #[gtest]
@@ -145,10 +152,12 @@ mod tests {
   }
 
   #[gtest]
-  fn test_eq_hash_with_str_slice() {
+  fn test_eq_hash_with_u8_slice() {
+    let mut u8_hash = BuildStringHash.build_hasher();
+    u8_hash.write("word;".as_bytes());
     expect_eq!(
       BuildStringHash.hash_one(InlineString::new("word")),
-      BuildStringHash.hash_one("word")
+      u8_hash.finish()
     );
   }
 }
