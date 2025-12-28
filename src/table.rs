@@ -45,7 +45,7 @@ impl Default for TemperatureSummary {
   }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Entry {
   key: InlineString,
   temp_summary: TemperatureSummary,
@@ -82,7 +82,7 @@ impl Entry {
 }
 
 pub struct WeatherStationTable<const SIZE: usize, H> {
-  buckets: [Entry; SIZE],
+  buckets: Box<[Entry]>,
   hasher: H,
 }
 
@@ -114,7 +114,7 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
 impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   pub fn with_hasher(hasher: H) -> Self {
     Self {
-      buckets: [(); SIZE].map(|_| Entry::default()),
+      buckets: vec![Entry::default(); SIZE].into_boxed_slice(),
       hasher,
     }
   }
