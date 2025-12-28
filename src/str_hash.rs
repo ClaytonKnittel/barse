@@ -49,6 +49,8 @@ pub struct StringHash(u64);
 
 impl Hasher for StringHash {
   fn write(&mut self, bytes: &[u8]) {
+    debug_assert_eq!(self.0, 0);
+
     let ptr = bytes.as_ptr();
     let v = if unlikely(unaligned_u64_read_would_cross_page_boundary(ptr)) {
       read_str_to_u64_slow(bytes)
@@ -59,7 +61,11 @@ impl Hasher for StringHash {
     let v = mask_char_and_above::<b';'>(v);
     let v = compress_lower_nibbles(v);
     let v = scramble_u32(v);
-    self.0 ^= v as u64
+    self.0 = v as u64
+  }
+
+  fn write_u8(&mut self, _: u8) {
+    unimplemented!();
   }
 
   fn finish(&self) -> u64 {
