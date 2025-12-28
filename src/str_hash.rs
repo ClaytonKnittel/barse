@@ -11,7 +11,7 @@ impl BuildHasher for BuildStringHash {
   }
 }
 
-#[cfg(any(test, target_feature = "avx2"))]
+#[cfg(any(test, not(target_feature = "avx2")))]
 mod hasher {
   use std::ptr::read_unaligned;
 
@@ -36,7 +36,7 @@ mod hasher {
     v & keep_mask
   }
 
-  fn compress_lower_nibbles(v: u128) -> u64 {
+  fn compress_u128_to_u64(v: u128) -> u64 {
     v as u64 ^ (v >> 64) as u64
   }
 
@@ -54,7 +54,7 @@ mod hasher {
     };
 
     let v = mask_char_and_above::<b';'>(v);
-    let v = compress_lower_nibbles(v);
+    let v = compress_u128_to_u64(v);
     scramble_u64(v)
   }
 
@@ -62,7 +62,7 @@ mod hasher {
   mod tests {
     use googletest::prelude::*;
 
-    use crate::str_hash::hasher::{compress_lower_nibbles, mask_char_and_above};
+    use crate::str_hash::hasher::mask_char_and_above;
 
     #[gtest]
     fn test_mask_char_and_above() {
@@ -73,14 +73,6 @@ mod hasher {
       expect_eq!(
         mask_char_and_above::<0x20>(0x10_11_12_13_14_15_16_17),
         0x10_11_12_13_14_15_16_17
-      );
-    }
-
-    #[gtest]
-    fn test_compress_lower_nibbles() {
-      expect_eq!(
-        compress_lower_nibbles(0x51_62_73_84_ab_cd_ef_09),
-        0x1b_2d_3f_49
       );
     }
   }
