@@ -49,6 +49,7 @@ impl Default for TemperatureSummary {
 }
 
 #[derive(Default, Clone)]
+#[repr(align(32))]
 struct Entry {
   key: InlineString,
   temp_summary: TemperatureSummary,

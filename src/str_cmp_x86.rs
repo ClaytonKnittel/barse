@@ -46,6 +46,7 @@ fn cmp_str_fast_avx(inline_str: &InlineString, other: &str) -> bool {
     unsafe { _mm256_loadu_si256(inline_str.value_str().as_ptr() as *const __m256i) };
   let mask = foreign_str_unknown_bytes_mask(len);
   let foreign_str_val = unsafe { _mm256_loadu_si256(other.as_ptr() as *const __m256i) };
+  let inline_str_val = _mm256_and_si256(inline_str_val, mask);
   let other_str_val = _mm256_and_si256(foreign_str_val, mask);
 
   cmp_si256(inline_str_val, other_str_val)

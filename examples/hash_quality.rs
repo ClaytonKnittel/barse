@@ -67,6 +67,17 @@ fn run() -> BarseResult {
   // const CAP: usize = 65536;
   const CAP: usize = 131072;
 
+  let below = 12;
+  println!(
+    "Pct below {}: {}",
+    below,
+    weather_stations
+      .iter()
+      .filter(|station| station.len() <= below)
+      .count() as f32
+      / weather_stations.len() as f32
+  );
+
   println!(
     "Default hash quality: {}",
     compute_hash_quality(

@@ -3,14 +3,14 @@ use std::{
   cmp::Ordering,
   fmt::Display,
   hash::{Hash, Hasher},
+  slice,
 };
 
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
 
 const MAX_STRING_LEN: usize = 50;
-const STRING_STORAGE_LEN: usize = 52;
-const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
+const STRING_STORAGE_LEN: usize = 12;
 
 #[derive(Clone)]
 #[repr(C, align(8))]
@@ -35,27 +35,44 @@ impl InlineString {
   }
 
   pub fn initialize(&mut self, contents: &str) {
-    debug_assert!(
-      contents.len() <= MAX_STRING_LEN,
-      "{} > {}",
-      contents.len(),
-      MAX_STRING_LEN
-    );
-    // TODO: see if I can avoid the memcpy call
-    unsafe { self.bytes.get_unchecked_mut(..contents.len()) }.copy_from_slice(contents.as_bytes());
-    self.len = contents.len() as u32;
+    let len = contents.len();
+    debug_assert!(len <= MAX_STRING_LEN, "{len} > {MAX_STRING_LEN}");
+    if len <= STRING_STORAGE_LEN {
+      unsafe { self.bytes.get_unchecked_mut(..len) }.copy_from_slice(contents.as_bytes());
+    } else {
+      let contents = contents.to_owned().leak().as_ptr();
+      unsafe { *(self.bytes.as_mut_ptr() as *mut *const u8) = contents };
+    }
+    self.len = len as u32;
+  }
+
+  fn is_sso(&self) -> bool {
+    self.len() <= STRING_STORAGE_LEN
+  }
+
+  fn sso_value(&self) -> &[u8] {
+    debug_assert!(self.is_sso());
+    unsafe { self.bytes.get_unchecked(..self.len()) }
+  }
+
+  fn heap_value(&self) -> &[u8] {
+    debug_assert!(!self.is_sso());
+    unsafe {
+      let ptr = *(self.bytes.as_ptr() as *const *const u8);
+      slice::from_raw_parts(ptr, self.len())
+    }
+  }
+
+  fn value(&self) -> &[u8] {
+    if self.is_sso() {
+      self.sso_value()
+    } else {
+      self.heap_value()
+    }
   }
 
   pub fn value_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(self.value()) }
-  }
-
-  fn value(&self) -> &[u8] {
-    unsafe { self.bytes.get_unchecked(..self.len as usize) }
-  }
-
-  fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
-    unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 
   #[cfg(target_feature = "avx2")]
@@ -80,7 +97,7 @@ impl Default for InlineString {
 
 impl PartialEq for InlineString {
   fn eq(&self, other: &Self) -> bool {
-    self.cmp_slice() == other.cmp_slice()
+    self.value_str() == other.value_str()
   }
 }
 
