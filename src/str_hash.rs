@@ -113,7 +113,7 @@ mod tests {
     struct PageAligned([u8; 8192]);
 
     let s = b"test;123";
-    let mut page_aligned = PageAligned([0; 8192]);
+    let mut page_aligned = PageAligned([0xa4; 8192]);
     // Aligned load
     page_aligned.0[0..8].copy_from_slice(s);
     // Cross cache line
