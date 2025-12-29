@@ -14,4 +14,8 @@ pub mod str_hash;
 pub mod str_hash_x86;
 pub mod table;
 pub mod temperature_reading;
+#[cfg(test)]
+pub mod test_against_simple_parser;
+#[cfg(test)]
+pub mod test_util;
 mod util;
