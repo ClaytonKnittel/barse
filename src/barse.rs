@@ -5,7 +5,6 @@ use memmap2::{Advice, MmapOptions};
 use crate::{
   error::BarseResult,
   scanner::Scanner,
-  str_hash::BuildStringHash,
   table::{TemperatureSummary, WeatherStationTable},
 };
 
@@ -61,11 +60,11 @@ impl<'a> Display for WeatherStation<'a> {
 
 pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
-) -> BarseResult<WeatherStationTable<TABLE_SIZE, BuildStringHash>> {
+) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
   Scanner::new(input).try_fold(
-    WeatherStationTable::with_hasher(BuildStringHash),
-    |mut map, (station, temp)| -> BarseResult<_> {
-      map.add_reading(station, temp);
+    WeatherStationTable::new(),
+    |mut map, (station, station_hash, temp)| -> BarseResult<_> {
+      map.add_reading(station, station_hash, temp);
       Ok(map)
     },
   )
@@ -73,7 +72,7 @@ pub fn build_temperature_reading_table_from_bytes(
 
 pub fn build_temperature_reading_table(
   input_path: &str,
-) -> BarseResult<WeatherStationTable<TABLE_SIZE, BuildStringHash>> {
+) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
   let file = File::open(input_path)?;
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;

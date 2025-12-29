@@ -6,7 +6,7 @@ use std::{
 use brc::build_input::{get_weather_stations, output_lines};
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::{error::BarseResult, temperature_reading::TemperatureReading};
+use crate::{error::BarseResult, str_hash::station_hash, temperature_reading::TemperatureReading};
 
 const ALIGNMENT: usize = 32;
 
@@ -68,7 +68,7 @@ pub fn random_input_file(
   ))
 }
 
-pub fn simple_scanner_iter(buffer: &[u8]) -> impl Iterator<Item = (&str, TemperatureReading)> {
+pub fn simple_scanner_iter(buffer: &[u8]) -> impl Iterator<Item = (&str, u64, TemperatureReading)> {
   str::from_utf8(buffer)
     .unwrap()
     .split('\n')
@@ -76,6 +76,10 @@ pub fn simple_scanner_iter(buffer: &[u8]) -> impl Iterator<Item = (&str, Tempera
     .map(|line| {
       let (station, temp) = line.split_once(';').unwrap();
       let temp = (temp.parse::<f32>().unwrap() * 10.).round() as i16;
-      (station, TemperatureReading::new(temp))
+      (
+        station,
+        station_hash(station),
+        TemperatureReading::new(temp),
+      )
     })
 }

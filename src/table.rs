@@ -1,9 +1,9 @@
-use std::{
-  fmt::Debug,
-  hash::{BuildHasher, Hasher},
-};
+use std::fmt::Debug;
 
-use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
+use crate::{
+  inline_string::InlineString, str_hash::station_hash, temperature_reading::TemperatureReading,
+  util::likely,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TemperatureSummary {
@@ -84,12 +84,17 @@ impl Entry {
   }
 }
 
-pub struct WeatherStationTable<const SIZE: usize, H> {
+pub struct WeatherStationTable<const SIZE: usize> {
   buckets: Box<[Entry]>,
-  hasher: H,
 }
 
-impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
+impl<const SIZE: usize> WeatherStationTable<SIZE> {
+  pub fn new() -> Self {
+    Self {
+      buckets: vec![Entry::default(); SIZE].into_boxed_slice(),
+    }
+  }
+
   pub fn iter(&self) -> impl Iterator<Item = (&str, &TemperatureSummary)> {
     WeatherStationIterator {
       table: self,
@@ -112,32 +117,23 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
       .expect("No empty bucket found, table is full");
     self.entry_at_mut(idx)
   }
-}
 
-impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
-  pub fn with_hasher(hasher: H) -> Self {
-    Self {
-      buckets: vec![Entry::default(); SIZE].into_boxed_slice(),
-      hasher,
-    }
+  pub fn add_reading(&mut self, station: &str, hash: u64, reading: TemperatureReading) {
+    self.find_entry(station, hash).add_reading(reading);
   }
 
-  pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
-    self.find_entry(station).add_reading(reading);
+  #[cfg(test)]
+  fn add_reading_for_tests(&mut self, station: &str, reading: TemperatureReading) {
+    self.add_reading(station, station_hash(station), reading);
   }
 
-  fn station_hash(&self, station: &str) -> u64 {
-    let mut hasher = self.hasher.build_hasher();
-    hasher.write(station.as_bytes());
-    hasher.finish()
+  fn station_index(&self, station: &str, hash: u64) -> usize {
+    debug_assert_eq!(hash, station_hash(station));
+    hash as usize % SIZE
   }
 
-  fn station_index(&self, station: &str) -> usize {
-    self.station_hash(station) as usize % SIZE
-  }
-
-  fn find_entry(&mut self, station: &str) -> &mut Entry {
-    let idx = self.station_index(station);
+  fn find_entry(&mut self, station: &str, hash: u64) -> &mut Entry {
+    let idx = self.station_index(station, hash);
 
     if likely(self.entry_at_mut(idx).matches_key_or_initialize(station)) {
       return self.entry_at_mut(idx);
@@ -148,24 +144,24 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   }
 }
 
-impl<const SIZE: usize, H: BuildHasher + Default> Default for WeatherStationTable<SIZE, H> {
+impl<const SIZE: usize> Default for WeatherStationTable<SIZE> {
   fn default() -> Self {
-    Self::with_hasher(H::default())
+    Self::new()
   }
 }
 
-impl<const SIZE: usize, H> Debug for WeatherStationTable<SIZE, H> {
+impl<const SIZE: usize> Debug for WeatherStationTable<SIZE> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "")
   }
 }
 
-struct WeatherStationIterator<'a, const SIZE: usize, H> {
-  table: &'a WeatherStationTable<SIZE, H>,
+struct WeatherStationIterator<'a, const SIZE: usize> {
+  table: &'a WeatherStationTable<SIZE>,
   index: usize,
 }
 
-impl<'a, const SIZE: usize, H> Iterator for WeatherStationIterator<'a, SIZE, H> {
+impl<'a, const SIZE: usize> Iterator for WeatherStationIterator<'a, SIZE> {
   type Item = (&'a str, &'a TemperatureSummary);
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -182,8 +178,6 @@ impl<'a, const SIZE: usize, H> Iterator for WeatherStationIterator<'a, SIZE, H> 
 
 #[cfg(test)]
 mod tests {
-  use std::hash::RandomState;
-
   use googletest::prelude::*;
   use itertools::Itertools;
 
@@ -194,8 +188,8 @@ mod tests {
 
   #[gtest]
   fn test_insert() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
-    table.add_reading("station1", TemperatureReading::new(123));
+    let mut table = WeatherStationTable::<16>::default();
+    table.add_reading_for_tests("station1", TemperatureReading::new(123));
 
     let mut iter = table.iter();
     expect_that!(
@@ -214,9 +208,9 @@ mod tests {
 
   #[gtest]
   fn test_insert_two_stations() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
-    table.add_reading("station1", TemperatureReading::new(123));
-    table.add_reading("station2", TemperatureReading::new(456));
+    let mut table = WeatherStationTable::<16>::default();
+    table.add_reading_for_tests("station1", TemperatureReading::new(123));
+    table.add_reading_for_tests("station2", TemperatureReading::new(456));
 
     let elements = table.iter().collect_vec();
     expect_that!(
@@ -246,9 +240,9 @@ mod tests {
 
   #[gtest]
   fn test_insert_station_twice() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
-    table.add_reading("station1", TemperatureReading::new(123));
-    table.add_reading("station1", TemperatureReading::new(456));
+    let mut table = WeatherStationTable::<16>::default();
+    table.add_reading_for_tests("station1", TemperatureReading::new(123));
+    table.add_reading_for_tests("station1", TemperatureReading::new(456));
 
     let elements = table.iter().collect_vec();
     expect_that!(

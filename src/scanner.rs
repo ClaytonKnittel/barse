@@ -1,6 +1,7 @@
 use std::{ptr::read_unaligned, slice};
 
 use crate::{
+  str_hash::station_hash,
   temperature_reading::TemperatureReading,
   util::{unaligned_read_would_cross_page_boundary, unlikely},
 };
@@ -177,12 +178,13 @@ impl<'a> Scanner<'a> {
 }
 
 impl<'a> Iterator for Scanner<'a> {
-  type Item = (&'a str, TemperatureReading);
+  type Item = (&'a str, u64, TemperatureReading);
 
   fn next(&mut self) -> Option<Self::Item> {
     let station_name = self.find_next_station_name()?;
+    let station_hash = station_hash(station_name);
     let temperature_reading = self.find_next_temp_reading();
-    Some((station_name, temperature_reading))
+    Some((station_name, station_hash, temperature_reading))
   }
 }
 
@@ -213,6 +215,7 @@ mod tests {
       scanner.next(),
       some((
         eq("Gasselterboerveenschemond"),
+        anything(),
         eq(TemperatureReading::new(-123))
       ))
     );
@@ -232,11 +235,11 @@ mod tests {
     let mut scanner = Scanner::new(&buffer.buffer);
     expect_that!(
       scanner.next(),
-      some((eq("Ab"), eq(TemperatureReading::new(208))))
+      some((eq("Ab"), anything(), eq(TemperatureReading::new(208))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("Cd"), eq(TemperatureReading::new(19))))
+      some((eq("Cd"), anything(), eq(TemperatureReading::new(19))))
     );
     expect_that!(scanner.next(), none());
   }
@@ -255,15 +258,15 @@ mod tests {
     let mut scanner = Scanner::new(&buffer.buffer);
     expect_that!(
       scanner.next(),
-      some((eq("Abcdefg"), eq(TemperatureReading::new(208))))
+      some((eq("Abcdefg"), anything(), eq(TemperatureReading::new(208))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("Hijklm"), eq(TemperatureReading::new(-987))))
+      some((eq("Hijklm"), anything(), eq(TemperatureReading::new(-987))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("Nopqrstu"), eq(TemperatureReading::new(12))))
+      some((eq("Nopqrstu"), anything(), eq(TemperatureReading::new(12))))
     );
     expect_that!(scanner.next(), none());
   }
@@ -288,12 +291,17 @@ mod tests {
       scanner.next(),
       some((
         eq("Abcdefghijklmnopqrstuvwxyz"),
+        anything(),
         eq(TemperatureReading::new(234))
       ))
     );
     expect_that!(
       scanner.next(),
-      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
+      some((
+        eq("New Buffer"),
+        anything(),
+        eq(TemperatureReading::new(34))
+      ))
     );
     expect_that!(scanner.next(), none());
   }
@@ -318,12 +326,17 @@ mod tests {
       scanner.next(),
       some((
         eq("Abcdefghijklmnopqrstuvwxyz"),
+        anything(),
         eq(TemperatureReading::new(-234))
       ))
     );
     expect_that!(
       scanner.next(),
-      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
+      some((
+        eq("New Buffer"),
+        anything(),
+        eq(TemperatureReading::new(34))
+      ))
     );
     expect_that!(scanner.next(), none());
   }
@@ -348,12 +361,17 @@ mod tests {
       scanner.next(),
       some((
         eq("Abcdefghijklmnopqrstuvwxyz123"),
+        anything(),
         eq(TemperatureReading::new(-234))
       ))
     );
     expect_that!(
       scanner.next(),
-      some((eq("New Buffer"), eq(TemperatureReading::new(34))))
+      some((
+        eq("New Buffer"),
+        anything(),
+        eq(TemperatureReading::new(34))
+      ))
     );
     expect_that!(scanner.next(), none());
   }
@@ -376,23 +394,23 @@ mod tests {
     let mut scanner = Scanner::new(&buffer.buffer);
     expect_that!(
       scanner.next(),
-      some((eq("P1"), eq(TemperatureReading::new(12))))
+      some((eq("P1"), anything(), eq(TemperatureReading::new(12))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("P2"), eq(TemperatureReading::new(34))))
+      some((eq("P2"), anything(), eq(TemperatureReading::new(34))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("P3"), eq(TemperatureReading::new(56))))
+      some((eq("P3"), anything(), eq(TemperatureReading::new(56))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("P4"), eq(TemperatureReading::new(78))))
+      some((eq("P4"), anything(), eq(TemperatureReading::new(78))))
     );
     expect_that!(
       scanner.next(),
-      some((eq("P5"), eq(TemperatureReading::new(90))))
+      some((eq("P5"), anything(), eq(TemperatureReading::new(90))))
     );
     expect_that!(scanner.next(), none());
   }
