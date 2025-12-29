@@ -157,7 +157,7 @@ mod tests {
       }
     }
 
-    for _ in 0..10 {
+    for _ in 0..1000 {
       let rand_len = distr.sample(&mut rng);
       let str_bytes = (0..rand_len)
         .map(|_| rand_u8_excluding_semicolon(&mut rng))
