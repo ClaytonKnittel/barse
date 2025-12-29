@@ -1,5 +1,11 @@
 use std::hash::{BuildHasher, Hasher};
 
+pub fn station_hash(station: &str) -> u64 {
+  let mut hasher = BuildStringHash.build_hasher();
+  hasher.write(station.as_bytes());
+  hasher.finish()
+}
+
 #[derive(Default)]
 pub struct BuildStringHash;
 
