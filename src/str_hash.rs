@@ -15,7 +15,7 @@ impl BuildHasher for BuildStringHash {
 mod generic_hasher {
   use std::ptr::read_unaligned;
 
-  use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
+  use crate::util::{unaligned_read_would_cross_page_boundary, unlikely};
 
   fn read_str_to_u128_slow(s: &[u8]) -> u128 {
     s.iter()
@@ -47,7 +47,7 @@ mod generic_hasher {
 
   pub fn str_hash(bytes: &[u8]) -> u64 {
     let ptr = bytes.as_ptr();
-    let v = if unlikely(unaligned_u128_read_would_cross_page_boundary(ptr)) {
+    let v = if unlikely(unaligned_read_would_cross_page_boundary::<u128>(ptr)) {
       read_str_to_u128_slow(bytes)
     } else {
       unsafe { read_unaligned(ptr as *const u128) }

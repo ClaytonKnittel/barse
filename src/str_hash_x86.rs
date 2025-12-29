@@ -3,7 +3,7 @@ use std::arch::x86_64::{
   _mm_xor_si128,
 };
 
-use crate::util::{unaligned_u128_read_would_cross_page_boundary, unlikely};
+use crate::util::{unaligned_read_would_cross_page_boundary, unlikely};
 
 fn read_str_to_m128_slow(s: &[u8]) -> __m128i {
   #[repr(align(16))]
@@ -48,7 +48,7 @@ fn scramble_u64(v: u64) -> u64 {
 
 pub fn str_hash_fast(bytes: &[u8]) -> u64 {
   let ptr = bytes.as_ptr();
-  let v = if unlikely(unaligned_u128_read_would_cross_page_boundary(ptr)) {
+  let v = if unlikely(unaligned_read_would_cross_page_boundary::<__m128i>(ptr)) {
     read_str_to_m128_slow(bytes)
   } else {
     unsafe { _mm_loadu_si128(ptr as *const __m128i) }
