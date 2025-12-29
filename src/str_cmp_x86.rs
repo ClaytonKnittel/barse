@@ -4,7 +4,7 @@ use std::arch::x86_64::{
 
 use crate::{
   inline_string::InlineString,
-  util::{unaligned_m256i_read_would_cross_page_boundary, unlikely},
+  util::{unaligned_read_would_cross_page_boundary, unlikely},
 };
 
 const M256_BYTES: usize = 32;
@@ -56,7 +56,7 @@ pub fn inline_str_eq_foreign_str(inline_str: &InlineString, other: &str) -> bool
   if unlikely(len != other.len()) {
     false
   } else if len > M256_BYTES
-    || unlikely(unaligned_m256i_read_would_cross_page_boundary(
+    || unlikely(unaligned_read_would_cross_page_boundary::<__m256i>(
       other.as_ptr(),
     ))
   {

@@ -171,7 +171,7 @@ mod tests {
   #[gtest]
   fn test_eq_hash_with_u8_slice() {
     let mut u8_hash = BuildStringHash.build_hasher();
-    u8_hash.write("word;".as_bytes());
+    u8_hash.write(&"word;".as_bytes()[0..4]);
     expect_eq!(
       BuildStringHash.hash_one(InlineString::new("word")),
       u8_hash.finish()
