@@ -23,7 +23,7 @@ where
       let h = hash(v);
       let mut bucket_idx = h as usize % buckets.len();
       let mut count = 1;
-      while let Some(other_v) = buckets[bucket_idx] {
+      while let Some(_other_v) = buckets[bucket_idx] {
         // println!("Collision for {} with {}", v, other_v);
         bucket_idx = (bucket_idx + 1) % buckets.len();
         count += 1;

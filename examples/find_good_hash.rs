@@ -50,16 +50,6 @@ fn weather_stations(path: &str) -> BarseResult<Vec<String>> {
   )
 }
 
-fn nibble_mush(bytes: &str) -> u32 {
-  bytes
-    .as_bytes()
-    .iter()
-    .take(8)
-    .enumerate()
-    .map(|(i, b)| ((b & 0x0f) as u32) << (4 * i))
-    .sum()
-}
-
 fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
   const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
   let search_mask = (NEEDLE as u128) * LSB;
