@@ -247,8 +247,10 @@ mod tests {
   #[gtest]
   fn test_insert_station_twice() {
     let mut table = WeatherStationTable::<16, RandomState>::default();
-    table.add_reading("station1", TemperatureReading::new(123));
-    table.add_reading("station1", TemperatureReading::new(456));
+    let station_name = "station1;";
+    let name_ref = str::from_utf8(&station_name.as_bytes()[..station_name.len() - 1]).unwrap();
+    table.add_reading(name_ref, TemperatureReading::new(123));
+    table.add_reading(name_ref, TemperatureReading::new(456));
 
     let elements = table.iter().collect_vec();
     expect_that!(

@@ -15,7 +15,7 @@ fn cmp_str_slow(inline_str: &InlineString, other: &str) -> bool {
 }
 
 fn foreign_str_unknown_bytes_mask(len: usize) -> __m256i {
-  debug_assert!((0..=M256_BYTES).contains(&len));
+  debug_assert!((0..M256_BYTES).contains(&len));
 
   const MASK_BYTES: [u8; 63] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
@@ -28,7 +28,7 @@ fn foreign_str_unknown_bytes_mask(len: usize) -> __m256i {
     0, 0, 0, 0, 0, 0, 0,
   ];
   unsafe {
-    _mm256_loadu_si256(MASK_BYTES.get_unchecked(M256_BYTES - len..).as_ptr() as *const __m256i)
+    _mm256_loadu_si256(MASK_BYTES.get_unchecked(M256_BYTES - 1 - len..).as_ptr() as *const __m256i)
   }
 }
 
@@ -52,10 +52,7 @@ fn cmp_str_fast_avx(inline_str: &InlineString, other: &str) -> bool {
 }
 
 pub fn inline_str_eq_foreign_str(inline_str: &InlineString, other: &str) -> bool {
-  let len = inline_str.len();
-  if unlikely(len != other.len()) {
-    false
-  } else if len > M256_BYTES
+  if inline_str.len() >= M256_BYTES
     || unlikely(unaligned_read_would_cross_page_boundary::<__m256i>(
       other.as_ptr(),
     ))
@@ -76,16 +73,20 @@ mod tests {
   fn test_cmp_eq() {
     expect_true!(inline_str_eq_foreign_str(
       &InlineString::new("test word"),
-      "test word"
+      "test word;"
     ));
-    expect_true!(inline_str_eq_foreign_str(&InlineString::new("a"), "a"));
+    expect_true!(inline_str_eq_foreign_str(&InlineString::new("a"), "a;"));
+    expect_true!(inline_str_eq_foreign_str(
+      &InlineString::new("This sentence has 31 letters!!!"),
+      str::from_utf8(&"This sentence has 31 letters!!!;".as_bytes()[..31]).unwrap()
+    ));
     expect_true!(inline_str_eq_foreign_str(
       &InlineString::new("This sentence is 32 letters long"),
-      "This sentence is 32 letters long"
+      str::from_utf8(&"This sentence is 32 letters long;".as_bytes()[..32]).unwrap()
     ));
     expect_true!(inline_str_eq_foreign_str(
       &InlineString::new("This sentence is more than 32 letters long"),
-      "This sentence is more than 32 letters long"
+      str::from_utf8(&"This sentence is more than 32 letters long;".as_bytes()[..42]).unwrap()
     ));
   }
 

@@ -43,6 +43,7 @@ impl InlineString {
     );
     // TODO: see if I can avoid the memcpy call
     unsafe { self.bytes.get_unchecked_mut(..contents.len()) }.copy_from_slice(contents.as_bytes());
+    *unsafe { self.bytes.get_unchecked_mut(contents.len()) } = b';';
     self.len = contents.len() as u32;
   }
 
