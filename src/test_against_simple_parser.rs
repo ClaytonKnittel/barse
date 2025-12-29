@@ -145,8 +145,27 @@ where
 }
 
 #[gtest]
-fn test_fuzz_10000_x_10() {
+fn test_fuzz_10_000_x_10() {
   let input = random_input_file(0x12312312, 10_000, 10).unwrap();
+  assert_equal_outputs(
+    barse_temperature_reading_summaries(input.padded_slice()),
+    expected_temperature_reading_summaries(str::from_utf8(input.exact_slice()).unwrap()),
+  );
+}
+
+#[gtest]
+fn test_fuzz_100_000_x_100() {
+  let input = random_input_file(0x43f9e1, 100_000, 100).unwrap();
+  assert_equal_outputs(
+    barse_temperature_reading_summaries(input.padded_slice()),
+    expected_temperature_reading_summaries(str::from_utf8(input.exact_slice()).unwrap()),
+  );
+}
+
+#[gtest]
+#[ignore]
+fn test_fuzz_10_000_000_x_10_000() {
+  let input = random_input_file(0x09f8eab1, 10_000_000, 10_000).unwrap();
   assert_equal_outputs(
     barse_temperature_reading_summaries(input.padded_slice()),
     expected_temperature_reading_summaries(str::from_utf8(input.exact_slice()).unwrap()),
