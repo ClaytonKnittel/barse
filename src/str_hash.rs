@@ -87,7 +87,6 @@ impl Hasher for StringHash {
     self.0 = crate::str_hash_x86::str_hash_fast(bytes);
   }
 
-  #[inline(never)]
   #[cfg(not(target_feature = "avx2"))]
   fn write(&mut self, bytes: &[u8]) {
     debug_assert_eq!(self.0, 0);
