@@ -28,4 +28,4 @@ jobs:
             echo "RUSTFLAGS=-C target-feature=+avx2" >> $GITHUB_ENV
           fi
       - name: Test
-        run: cargo test --config test -- --include-ignored
+        run: cargo test --profile test -- --include-ignored
