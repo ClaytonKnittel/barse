@@ -21,7 +21,8 @@ impl TemperatureSummary {
   }
 
   fn avg(&self) -> f32 {
-    (self.total as f64 / 10.0 / self.count as f64) as f32
+    let rounded_total = self.total + (self.count / 2) as i64;
+    rounded_total.div_euclid(self.count as i64) as f32 / 10.0
   }
 
   fn add_reading(&mut self, temp: f32) {
