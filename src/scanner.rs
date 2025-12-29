@@ -2,6 +2,7 @@ use std::{ptr::read_unaligned, slice};
 
 use crate::{
   str_hash::station_hash,
+  table::WeatherStationTable,
   temperature_reading::TemperatureReading,
   util::{unaligned_read_would_cross_page_boundary, unlikely},
 };
@@ -14,7 +15,7 @@ use crate::scanner_cache_x86::Cache;
 const MAX_STATION_NAME_LEN: usize = 50;
 
 /// Scans for alternating semicolons and newlines.
-pub struct Scanner<'a> {
+pub struct Scanner<'a, const TABLE_SIZE: usize> {
   buffer: &'a [u8],
   cache: Cache,
   semicolon_mask: u32,
@@ -23,11 +24,14 @@ pub struct Scanner<'a> {
   /// The offset of the previously-read newline character + 1, e.g. the
   /// starting point of the expected next weather station name.
   cur_offset: u32,
+
+  /// Pointer to the table buckets that can be used for prefetching elements.
+  buckets_ptr: *const u8,
 }
 
-impl<'a> Scanner<'a> {
+impl<'a, const TABLE_SIZE: usize> Scanner<'a, TABLE_SIZE> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
-  pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
+  pub fn new<'b: 'a>(buffer: &'b [u8], buckets_ptr: *const u8) -> Self {
     debug_assert!(buffer.len().is_multiple_of(Cache::bytes_per_buffer()));
     let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(buffer);
     Self {
@@ -36,6 +40,7 @@ impl<'a> Scanner<'a> {
       semicolon_mask,
       newline_mask,
       cur_offset: 0,
+      buckets_ptr,
     }
   }
 
@@ -177,12 +182,13 @@ impl<'a> Scanner<'a> {
   }
 }
 
-impl<'a> Iterator for Scanner<'a> {
+impl<'a, const TABLE_SIZE: usize> Iterator for Scanner<'a, TABLE_SIZE> {
   type Item = (&'a str, u64, TemperatureReading);
 
   fn next(&mut self) -> Option<Self::Item> {
     let station_name = self.find_next_station_name()?;
     let station_hash = station_hash(station_name);
+    WeatherStationTable::<TABLE_SIZE>::prefetch_bucket(self.buckets_ptr, station_hash);
     let temperature_reading = self.find_next_temp_reading();
     Some((station_name, station_hash, temperature_reading))
   }

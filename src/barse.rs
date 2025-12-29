@@ -18,8 +18,10 @@ pub fn build_temperature_reading_table(
   map.advise(Advice::Sequential)?;
   let map_buffer = unsafe { round_up_to_32b_boundary(&map) };
 
-  Scanner::new(map_buffer).try_fold(
-    WeatherStationTable::new(),
+  let table = WeatherStationTable::new();
+
+  Scanner::<TABLE_SIZE>::new(map_buffer, table.bucket_ptr_for_prefetch()).try_fold(
+    table,
     |mut map, (station, hash, temp)| -> BarseResult<_> {
       map.add_reading(station, hash, temp);
       Ok(map)

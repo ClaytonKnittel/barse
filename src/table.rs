@@ -95,6 +95,20 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     }
   }
 
+  pub fn bucket_ptr_for_prefetch(&self) -> *const u8 {
+    self.buckets.as_ptr() as *const u8
+  }
+
+  pub fn prefetch_bucket(buckets_ptr: *const u8, hash: u64) {
+    let station_index = hash as usize % SIZE;
+    unsafe {
+      let bucket_ptr = (buckets_ptr as *const Entry).add(station_index);
+      std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_T0 }>(
+        bucket_ptr as *const i8,
+      );
+    }
+  }
+
   pub fn iter(&self) -> impl Iterator<Item = (&str, &TemperatureSummary)> {
     WeatherStationIterator {
       table: self,
