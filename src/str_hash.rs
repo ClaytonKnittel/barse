@@ -81,7 +81,6 @@ mod generic_hasher {
 pub struct StringHash(u64);
 
 impl Hasher for StringHash {
-  #[inline(never)]
   #[cfg(target_feature = "avx2")]
   fn write(&mut self, bytes: &[u8]) {
     debug_assert_eq!(self.0, 0);
