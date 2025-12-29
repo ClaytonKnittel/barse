@@ -25,15 +25,18 @@ mod generic_hasher {
       .sum()
   }
 
-  /// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
-  /// that byte and all higher-order bytes zeroed out.
-  fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
-    const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
-    let search_mask = (NEEDLE as u128) * LSB;
-    let zeroed_needles = v ^ search_mask;
-    let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
-    let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
-    v & keep_mask
+  fn mask_above(v: u128, len: usize) -> u128 {
+    const MASK_REGION: [u8; 32] = [
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //
+      0, 0, 0, 0, 0, 0, 0, 0, //
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    let len = len.min(std::mem::size_of::<u128>());
+    let mask = unsafe {
+      read_unaligned(MASK_REGION.as_ptr().add(std::mem::size_of::<u128>() - len) as *const u128)
+    };
+    v & mask
   }
 
   fn compress_u128_to_u64(v: u128) -> u64 {
@@ -53,7 +56,7 @@ mod generic_hasher {
       unsafe { read_unaligned(ptr as *const u128) }
     };
 
-    let v = mask_char_and_above::<b';'>(v);
+    let v = mask_above(v, bytes.len());
     let v = compress_u128_to_u64(v);
     scramble_u64(v)
   }
@@ -62,16 +65,16 @@ mod generic_hasher {
   mod tests {
     use googletest::prelude::*;
 
-    use crate::str_hash::generic_hasher::mask_char_and_above;
+    use crate::str_hash::generic_hasher::mask_above;
 
     #[gtest]
     fn test_mask_char_and_above() {
       expect_eq!(
-        mask_char_and_above::<0x12>(0x10_11_12_13_14_15_16_17),
+        mask_above(0x10_11_12_13_14_15_16_17, 5),
         0x00_00_00_13_14_15_16_17
       );
       expect_eq!(
-        mask_char_and_above::<0x20>(0x10_11_12_13_14_15_16_17),
+        mask_above(0x10_11_12_13_14_15_16_17, 12),
         0x10_11_12_13_14_15_16_17
       );
     }
