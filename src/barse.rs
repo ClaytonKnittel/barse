@@ -4,15 +4,20 @@ use memmap2::{Advice, MmapOptions};
 
 use crate::{
   error::BarseResult,
-  scanner::Scanner,
+  scanner::{Scanner, SCANNER_CACHE_SIZE},
   str_hash::BuildStringHash,
   table::{TemperatureSummary, WeatherStationTable},
 };
 
 const TABLE_SIZE: usize = 65536;
 
-unsafe fn round_up_to_32b_boundary(buffer: &[u8]) -> &[u8] {
-  unsafe { slice::from_raw_parts(buffer.as_ptr(), buffer.len().next_multiple_of(32)) }
+unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
+  unsafe {
+    slice::from_raw_parts(
+      buffer.as_ptr(),
+      buffer.len().next_multiple_of(SCANNER_CACHE_SIZE),
+    )
+  }
 }
 
 pub struct WeatherStation<'a> {
@@ -78,6 +83,6 @@ pub fn build_temperature_reading_table(
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;
 
-  let map_buffer = unsafe { round_up_to_32b_boundary(&map) };
+  let map_buffer = unsafe { round_up_to_cache_size_boundary(&map) };
   build_temperature_reading_table_from_bytes(map_buffer)
 }
