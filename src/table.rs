@@ -1,7 +1,10 @@
 use std::{
   fmt::Debug,
   hash::{BuildHasher, Hasher},
+  i16,
 };
+
+use memmap2::{MmapMut, MmapOptions};
 
 use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
 
@@ -14,6 +17,13 @@ pub struct TemperatureSummary {
 }
 
 impl TemperatureSummary {
+  fn initialize(&mut self) {
+    self.min = TemperatureReading::new(i16::MAX);
+    self.max = TemperatureReading::new(i16::MIN);
+    debug_assert_eq!(self.total, 0);
+    debug_assert_eq!(self.count, 0);
+  }
+
   pub fn min(&self) -> TemperatureReading {
     self.min
   }
@@ -57,6 +67,7 @@ struct Entry {
 impl Entry {
   fn initialize(&mut self, station: &str) {
     self.key.initialize(station);
+    self.temp_summary.initialize();
   }
 
   fn add_reading(&mut self, reading: TemperatureReading) {
@@ -85,7 +96,7 @@ impl Entry {
 }
 
 pub struct WeatherStationTable<const SIZE: usize, H> {
-  buckets: Box<[Entry]>,
+  buckets: MmapMut,
   hasher: H,
 }
 
@@ -97,12 +108,22 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
     }
   }
 
+  fn elements_ptr(&self) -> *const Entry {
+    self.buckets.as_ptr() as *const Entry
+  }
+
+  fn mut_elements_ptr(&mut self) -> *mut Entry {
+    self.buckets.as_mut_ptr() as *mut Entry
+  }
+
   fn entry_at(&self, index: usize) -> &Entry {
-    unsafe { self.buckets.get_unchecked(index) }
+    debug_assert!(index < SIZE);
+    unsafe { &*self.elements_ptr().add(index) }
   }
 
   fn entry_at_mut(&mut self, index: usize) -> &mut Entry {
-    unsafe { self.buckets.get_unchecked_mut(index) }
+    debug_assert!(index < SIZE);
+    unsafe { &mut *self.mut_elements_ptr().add(index) }
   }
 
   fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
@@ -116,10 +137,9 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
 
 impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   pub fn with_hasher(hasher: H) -> Self {
-    Self {
-      buckets: vec![Entry::default(); SIZE].into_boxed_slice(),
-      hasher,
-    }
+    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
+    let buckets = MmapOptions::new().len(size).map_anon().unwrap();
+    Self { buckets, hasher }
   }
 
   pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
