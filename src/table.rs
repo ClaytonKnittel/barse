@@ -7,8 +7,8 @@ use std::{
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, inline_string::InlineString, temperature_reading::TemperatureReading,
-  util::likely,
+  error::BarseResult, inline_string::InlineString, str_hash::BuildStringHash,
+  temperature_reading::TemperatureReading, util::likely,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -97,12 +97,23 @@ impl Entry {
   }
 }
 
-pub struct WeatherStationTable<const SIZE: usize, H> {
+pub struct WeatherStationTable<const SIZE: usize> {
   buckets: MmapMut,
-  hasher: H,
 }
 
-impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
+impl<const SIZE: usize> WeatherStationTable<SIZE> {
+  pub fn new() -> BarseResult<Self> {
+    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
+    let buckets = MmapOptions::new().len(size).map_anon()?;
+    buckets.advise(memmap2::Advice::HugePage)?;
+
+    let mut s = Self { buckets };
+    for i in 0..SIZE {
+      s.entry_at_mut(i).temp_summary.initialize();
+    }
+    Ok(s)
+  }
+
   pub fn iter(&self) -> impl Iterator<Item = (&str, &TemperatureSummary)> {
     WeatherStationIterator {
       table: self,
@@ -135,27 +146,13 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
       .expect("No empty bucket found, table is full");
     self.entry_at_mut(idx)
   }
-}
-
-impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
-  pub fn with_hasher(hasher: H) -> BarseResult<Self> {
-    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
-    let buckets = MmapOptions::new().len(size).map_anon()?;
-    buckets.advise(memmap2::Advice::HugePage)?;
-
-    let mut s = Self { buckets, hasher };
-    for i in 0..SIZE {
-      s.entry_at_mut(i).temp_summary.initialize();
-    }
-    Ok(s)
-  }
 
   pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
     self.find_entry(station).add_reading(reading);
   }
 
   fn station_hash(&self, station: &str) -> u64 {
-    let mut hasher = self.hasher.build_hasher();
+    let mut hasher = BuildStringHash.build_hasher();
     hasher.write(station.as_bytes());
     hasher.finish()
   }
@@ -176,18 +173,18 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   }
 }
 
-impl<const SIZE: usize, H> Debug for WeatherStationTable<SIZE, H> {
+impl<const SIZE: usize> Debug for WeatherStationTable<SIZE> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "")
   }
 }
 
-struct WeatherStationIterator<'a, const SIZE: usize, H> {
-  table: &'a WeatherStationTable<SIZE, H>,
+struct WeatherStationIterator<'a, const SIZE: usize> {
+  table: &'a WeatherStationTable<SIZE>,
   index: usize,
 }
 
-impl<'a, const SIZE: usize, H> Iterator for WeatherStationIterator<'a, SIZE, H> {
+impl<'a, const SIZE: usize> Iterator for WeatherStationIterator<'a, SIZE> {
   type Item = (&'a str, &'a TemperatureSummary);
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -204,8 +201,6 @@ impl<'a, const SIZE: usize, H> Iterator for WeatherStationIterator<'a, SIZE, H> 
 
 #[cfg(test)]
 mod tests {
-  use std::hash::RandomState;
-
   use googletest::prelude::*;
   use itertools::Itertools;
 
@@ -214,8 +209,8 @@ mod tests {
     temperature_reading::TemperatureReading,
   };
 
-  fn new_table<const SIZE: usize>() -> WeatherStationTable<SIZE, RandomState> {
-    WeatherStationTable::with_hasher(RandomState::default()).unwrap()
+  fn new_table<const SIZE: usize>() -> WeatherStationTable<SIZE> {
+    WeatherStationTable::new().unwrap()
   }
 
   #[gtest]
