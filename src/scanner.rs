@@ -252,25 +252,32 @@ mod tests {
   fn test_iter_two_spans() {
     let buffer = AlignedBuffer {
       buffer: [
-        b'A', b'b', b'c', b'd', b'e', b'f', b'g', b';', b'2', b'0', b'.', b'8', b'\n', //
-        b'H', b'i', b'j', b'k', b'l', b'm', b';', b'-', b'9', b'8', b'.', b'7', b'\n', //
-        b'N', b'o', b'p', b'q', b'r', b's', b't', b'u', b';', b'1', b'.', b'2', b'\n', //
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'1', b';', b'2', b'.', b'3', b'\n', //
+        b'R', b'o', b'2', b';', b'3', b'.', b'4', b'\n', //
+        0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
       ],
     };
 
     let mut scanner = Scanner::new(&buffer.buffer);
+    for _ in 0..8 {
+      expect_that!(
+        scanner.next(),
+        some((eq("Ro1"), eq(TemperatureReading::new(23))))
+      );
+    }
     expect_that!(
       scanner.next(),
-      some((eq("Abcdefg"), eq(TemperatureReading::new(208))))
-    );
-    expect_that!(
-      scanner.next(),
-      some((eq("Hijklm"), eq(TemperatureReading::new(-987))))
-    );
-    expect_that!(
-      scanner.next(),
-      some((eq("Nopqrstu"), eq(TemperatureReading::new(12))))
+      some((eq("Ro2"), eq(TemperatureReading::new(34))))
     );
     expect_that!(scanner.next(), none());
   }
