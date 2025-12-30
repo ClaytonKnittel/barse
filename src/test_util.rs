@@ -39,7 +39,7 @@ impl AlignedInput {
   }
 
   pub fn padded_slice(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.bytes, self.len.next_multiple_of(ALIGNMENT)) }
+    unsafe { slice::from_raw_parts(self.bytes, self.len.next_multiple_of(2 * ALIGNMENT)) }
   }
 }
 impl Drop for AlignedInput {

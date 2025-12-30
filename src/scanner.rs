@@ -16,8 +16,8 @@ const MAX_STATION_NAME_LEN: usize = 50;
 pub struct Scanner<'a> {
   buffer: &'a [u8],
   cache: Cache,
-  semicolon_mask: u32,
-  newline_mask: u32,
+  semicolon_mask: u64,
+  newline_mask: u64,
 
   /// The offset of the previously-read newline character + 1, e.g. the
   /// starting point of the expected next weather station name.
@@ -27,7 +27,7 @@ pub struct Scanner<'a> {
 impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len().is_multiple_of(Cache::bytes_per_buffer()));
+    debug_assert!(buffer.len().is_multiple_of(Cache::BYTES_PER_BUFFER));
     let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(buffer);
     Self {
       buffer,
@@ -39,8 +39,8 @@ impl<'a> Scanner<'a> {
   }
 
   fn read_next_assuming_available(&mut self) {
-    debug_assert!(self.buffer.len() > Cache::bytes_per_buffer());
-    self.buffer = unsafe { self.buffer.get_unchecked(Cache::bytes_per_buffer()..) };
+    debug_assert!(self.buffer.len() > Cache::BYTES_PER_BUFFER);
+    self.buffer = unsafe { self.buffer.get_unchecked(Cache::BYTES_PER_BUFFER..) };
     let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(self.buffer);
     self.cache = cache;
     self.semicolon_mask = semicolon_mask;
@@ -49,7 +49,7 @@ impl<'a> Scanner<'a> {
 
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == Cache::bytes_per_buffer() {
+    if self.buffer.len() == Cache::BYTES_PER_BUFFER {
       return false;
     }
     self.read_next_assuming_available();
@@ -57,7 +57,7 @@ impl<'a> Scanner<'a> {
   }
 
   fn offset_to_ptr(&self, offset: u32) -> *const u8 {
-    debug_assert!(offset <= Cache::bytes_per_buffer() as u32);
+    debug_assert!(offset <= Cache::BYTES_PER_BUFFER as u32);
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
@@ -71,12 +71,14 @@ impl<'a> Scanner<'a> {
     // The next semicolon must be found within the next MAX_STATION_NAME_LEN +
     // 1 bytes. In the worst case, the previous newline was the last character
     // of the previous buffer, and the read_next call we just performed read
-    // the first `Cache::bytes_per_buffer()` bytes of the next station name.
+    // the first `Cache::BYTES_PER_BUFFER` bytes of the next station name.
     // This means we may not find the next semicolon until
     // `MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer` more bytes have
     // been read.
-    const MAX_ITERS: usize =
-      (MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer()).div_ceil(Cache::bytes_per_buffer());
+    const MAX_ITERS: usize = (MAX_STATION_NAME_LEN + 1)
+      .saturating_sub(Cache::BYTES_PER_BUFFER)
+      .div_ceil(Cache::BYTES_PER_BUFFER);
+    #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..MAX_ITERS {
       if self.semicolon_mask != 0 {
         return true;
@@ -110,7 +112,7 @@ impl<'a> Scanner<'a> {
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
     self.cur_offset = semicolon_offset + 1;
-    if semicolon_offset == 31 {
+    if semicolon_offset == Cache::BYTES_PER_BUFFER as u32 - 1 {
       self.read_next_assuming_available();
       self.cur_offset = 0;
     }
@@ -124,21 +126,22 @@ impl<'a> Scanner<'a> {
     debug_assert!(self.newline_mask != 0);
     let newline_offset = self.newline_mask.trailing_zeros();
     self.cur_offset = newline_offset + 1;
-    debug_assert!(self.cur_offset < 32);
+    debug_assert!(self.cur_offset < Cache::BYTES_PER_BUFFER as u32);
   }
 
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
     #[repr(align(64))]
-    struct TempStorage([u8; 64]);
+    struct TempStorage([u8; 128]);
 
-    let mut temp_storage = TempStorage([0; 64]);
+    let mut temp_storage = TempStorage([0; 128]);
     self.cache.aligned_store(temp_storage.0.as_mut_ptr());
 
+    // TODO: This conditional is unnecessary.
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
       self
         .cache
-        .aligned_store(temp_storage.0[Cache::bytes_per_buffer()..].as_mut_ptr());
+        .aligned_store(temp_storage.0[Cache::BYTES_PER_BUFFER..].as_mut_ptr());
     }
 
     let encoding = unsafe {
@@ -202,9 +205,12 @@ mod tests {
   fn test_iter_single_element() {
     let buffer = AlignedBuffer {
       buffer: [
-        b'G', b'a', b's', b's', b'e', b'l', b't', b'e', b'r', b'b', b'o', b'e', b'r', b'v', b'e',
-        b'e', b'n', b's', b'c', b'h', b'e', b'm', b'o', b'n', b'd', b';', b'-', b'1', b'2', b'.',
-        b'3', b'\n',
+        b'G', b'a', b's', b's', b'e', b'l', b't', b'e', //
+        b'r', b'b', b'o', b'e', b'r', b'v', b'e', b'e', //
+        b'n', b's', b'c', b'h', b'e', b'm', b'o', b'n', //
+        b'd', b';', b'-', b'1', b'2', b'.', b'3', b'\n', //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       ],
     };
 
@@ -224,8 +230,10 @@ mod tests {
     let buffer = AlignedBuffer {
       buffer: [
         b'A', b'b', b';', b'2', b'0', b'.', b'8', b'\n', //
-        b'C', b'd', b';', b'1', b'.', b'9', b'\n', //
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'C', b'd', b';', b'1', b'.', b'9', b'\n', 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       ],
     };
 
