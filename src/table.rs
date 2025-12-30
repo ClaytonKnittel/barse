@@ -1,9 +1,15 @@
 use std::{
   fmt::Debug,
   hash::{BuildHasher, Hasher},
+  i16,
 };
 
-use crate::{inline_string::InlineString, temperature_reading::TemperatureReading, util::likely};
+use memmap2::{MmapMut, MmapOptions};
+
+use crate::{
+  error::BarseResult, inline_string::InlineString, temperature_reading::TemperatureReading,
+  util::likely,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TemperatureSummary {
@@ -14,6 +20,13 @@ pub struct TemperatureSummary {
 }
 
 impl TemperatureSummary {
+  fn initialize(&mut self) {
+    self.min = TemperatureReading::new(i16::MAX);
+    self.max = TemperatureReading::new(i16::MIN);
+    debug_assert_eq!(self.total, 0);
+    debug_assert_eq!(self.count, 0);
+  }
+
   pub fn min(&self) -> TemperatureReading {
     self.min
   }
@@ -85,7 +98,7 @@ impl Entry {
 }
 
 pub struct WeatherStationTable<const SIZE: usize, H> {
-  buckets: Box<[Entry]>,
+  buckets: MmapMut,
   hasher: H,
 }
 
@@ -97,12 +110,22 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
     }
   }
 
+  fn elements_ptr(&self) -> *const Entry {
+    self.buckets.as_ptr() as *const Entry
+  }
+
+  fn mut_elements_ptr(&mut self) -> *mut Entry {
+    self.buckets.as_mut_ptr() as *mut Entry
+  }
+
   fn entry_at(&self, index: usize) -> &Entry {
-    unsafe { self.buckets.get_unchecked(index) }
+    debug_assert!(index < SIZE);
+    unsafe { &*self.elements_ptr().add(index) }
   }
 
   fn entry_at_mut(&mut self, index: usize) -> &mut Entry {
-    unsafe { self.buckets.get_unchecked_mut(index) }
+    debug_assert!(index < SIZE);
+    unsafe { &mut *self.mut_elements_ptr().add(index) }
   }
 
   fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
@@ -115,11 +138,16 @@ impl<const SIZE: usize, H> WeatherStationTable<SIZE, H> {
 }
 
 impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
-  pub fn with_hasher(hasher: H) -> Self {
-    Self {
-      buckets: vec![Entry::default(); SIZE].into_boxed_slice(),
-      hasher,
+  pub fn with_hasher(hasher: H) -> BarseResult<Self> {
+    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
+    let buckets = MmapOptions::new().len(size).map_anon()?;
+    buckets.advise(memmap2::Advice::HugePage)?;
+
+    let mut s = Self { buckets, hasher };
+    for i in 0..SIZE {
+      s.entry_at_mut(i).temp_summary.initialize();
     }
+    Ok(s)
   }
 
   pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
@@ -145,12 +173,6 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
 
     // Otherwise we have to search for a bucket.
     self.scan_for_entry(station, idx)
-  }
-}
-
-impl<const SIZE: usize, H: BuildHasher + Default> Default for WeatherStationTable<SIZE, H> {
-  fn default() -> Self {
-    Self::with_hasher(H::default())
   }
 }
 
@@ -192,9 +214,13 @@ mod tests {
     temperature_reading::TemperatureReading,
   };
 
+  fn new_table<const SIZE: usize>() -> WeatherStationTable<SIZE, RandomState> {
+    WeatherStationTable::with_hasher(RandomState::default()).unwrap()
+  }
+
   #[gtest]
   fn test_insert() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
+    let mut table = new_table::<16>();
     table.add_reading("station1", TemperatureReading::new(123));
 
     let mut iter = table.iter();
@@ -214,7 +240,7 @@ mod tests {
 
   #[gtest]
   fn test_insert_two_stations() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
+    let mut table = new_table::<16>();
     table.add_reading("station1", TemperatureReading::new(123));
     table.add_reading("station2", TemperatureReading::new(456));
 
@@ -246,7 +272,7 @@ mod tests {
 
   #[gtest]
   fn test_insert_station_twice() {
-    let mut table = WeatherStationTable::<16, RandomState>::default();
+    let mut table = new_table::<16>();
     table.add_reading("station1", TemperatureReading::new(123));
     table.add_reading("station1", TemperatureReading::new(456));
 
