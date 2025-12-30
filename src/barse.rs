@@ -68,7 +68,7 @@ pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
 ) -> BarseResult<WeatherStationTable<TABLE_SIZE, BuildStringHash>> {
   Scanner::new(input).try_fold(
-    WeatherStationTable::with_hasher(BuildStringHash),
+    WeatherStationTable::with_hasher(BuildStringHash)?,
     |mut map, (station, temp)| -> BarseResult<_> {
       map.add_reading(station, temp);
       Ok(map)
