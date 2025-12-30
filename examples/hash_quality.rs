@@ -8,7 +8,7 @@ use std::{
 
 use barse::{
   error::{BarseError, BarseResult},
-  str_hash::BuildStringHash,
+  str_hash::str_hash,
 };
 use rand::{rng, seq::IteratorRandom};
 
@@ -122,11 +122,7 @@ fn run() -> BarseResult {
     "My hash quality: {}",
     compute_hash_quality(
       &weather_stations,
-      |station| {
-        let mut hasher = BuildStringHash.build_hasher();
-        hasher.write(station.as_bytes());
-        hasher.finish()
-      },
+      |station| { str_hash(station.as_bytes()) },
       CAP
     )
   );
