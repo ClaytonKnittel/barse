@@ -2,9 +2,7 @@
 pub struct Cache(u128);
 
 impl Cache {
-  pub const fn bytes_per_buffer() -> usize {
-    16
-  }
+  pub const BYTES_PER_BUFFER: usize = 16;
 
   pub fn aligned_store(&self, ptr: *mut u8) {
     let u128_ptr = ptr as *mut u128;
@@ -12,7 +10,7 @@ impl Cache {
     unsafe { *u128_ptr = self.0 };
   }
 
-  pub fn read_next_from_buffer(buffer: &[u8]) -> (Cache, u32, u32) {
+  pub fn read_next_from_buffer(buffer: &[u8]) -> (Cache, u64, u64) {
     let cache = unsafe { *(buffer.as_ptr() as *const u128) };
     let semicolon_mask = Self::char_mask(cache, b';');
     let newline_mask = Self::char_mask(cache, b'\n');
@@ -26,17 +24,17 @@ impl Cache {
     val.wrapping_mul(COMPRESS_PRODUCT) >> 56
   }
 
-  fn find_zero_bytes(val: u128) -> u32 {
+  fn find_zero_bytes(val: u128) -> u64 {
     const MSB: u128 = 0x8080_8080_8080_8080_8080_8080_8080_8080;
     let x = (val & !MSB) + !MSB;
     let y = !(x | val) & MSB;
     let lower_half = y as u64;
     let upper_half = (y >> 64) as u64;
 
-    (Self::compress_msb(lower_half) + (Self::compress_msb(upper_half) << 8)) as u32
+    (Self::compress_msb(lower_half) + (Self::compress_msb(upper_half) << 8)) as u64
   }
 
-  fn char_mask(cache: u128, needle: u8) -> u32 {
+  fn char_mask(cache: u128, needle: u8) -> u64 {
     const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
     let search_mask = LSB * needle as u128;
     let zero_mask = cache ^ search_mask;
