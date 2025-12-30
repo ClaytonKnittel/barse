@@ -12,6 +12,8 @@ use crate::scanner_cache_x86::Cache;
 
 const MAX_STATION_NAME_LEN: usize = 50;
 
+pub(crate) const SCANNER_CACHE_SIZE: usize = Cache::BYTES_PER_BUFFER;
+
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
   buffer: &'a [u8],
