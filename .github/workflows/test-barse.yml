@@ -27,5 +27,7 @@ jobs:
           else
             echo "RUSTFLAGS=-C target-feature=+avx2" >> $GITHUB_ENV
           fi
+      - name: Clippy
+        run: cargo clippy --no-deps
       - name: Test
         run: cargo test --profile test -- --include-ignored
