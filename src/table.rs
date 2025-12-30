@@ -1,13 +1,9 @@
-use std::{
-  fmt::Debug,
-  hash::{BuildHasher, Hasher},
-  i16,
-};
+use std::fmt::Debug;
 
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, inline_string::InlineString, str_hash::BuildStringHash,
+  error::BarseResult, inline_string::InlineString, str_hash::str_hash,
   temperature_reading::TemperatureReading, util::likely,
 };
 
@@ -152,9 +148,7 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
   }
 
   fn station_hash(&self, station: &str) -> u64 {
-    let mut hasher = BuildStringHash.build_hasher();
-    hasher.write(station.as_bytes());
-    hasher.finish()
+    str_hash(station.as_bytes())
   }
 
   fn station_index(&self, station: &str) -> usize {

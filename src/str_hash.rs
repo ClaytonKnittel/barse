@@ -1,16 +1,3 @@
-use std::hash::{BuildHasher, Hasher};
-
-#[derive(Default)]
-pub struct BuildStringHash;
-
-impl BuildHasher for BuildStringHash {
-  type Hasher = StringHash;
-
-  fn build_hasher(&self) -> StringHash {
-    StringHash(0)
-  }
-}
-
 #[cfg(any(test, not(target_feature = "avx2")))]
 mod generic_hasher {
   use std::ptr::read_unaligned;
@@ -27,13 +14,8 @@ mod generic_hasher {
 
   /// Finds the first occurrence of byte `NEEDLE` in `v`, and returns `v` with
   /// that byte and all higher-order bytes zeroed out.
-  fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
-    const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
-    let search_mask = (NEEDLE as u128) * LSB;
-    let zeroed_needles = v ^ search_mask;
-    let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
-    let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
-    v & keep_mask
+  fn mask_above(v: u128, len: usize) -> u128 {
+    v & 1u128.unbounded_shl(8 * len.min(16) as u32).wrapping_sub(1)
   }
 
   fn compress_u128_to_u64(v: u128) -> u64 {
@@ -53,7 +35,7 @@ mod generic_hasher {
       unsafe { read_unaligned(ptr as *const u128) }
     };
 
-    let v = mask_char_and_above::<b';'>(v);
+    let v = mask_above(v, bytes.len());
     let v = compress_u128_to_u64(v);
     scramble_u64(v)
   }
@@ -62,50 +44,34 @@ mod generic_hasher {
   mod tests {
     use googletest::prelude::*;
 
-    use crate::str_hash::generic_hasher::mask_char_and_above;
+    use crate::str_hash::generic_hasher::mask_above;
 
     #[gtest]
     fn test_mask_char_and_above() {
       expect_eq!(
-        mask_char_and_above::<0x12>(0x10_11_12_13_14_15_16_17),
+        mask_above(0x10_11_12_13_14_15_16_17, 5),
         0x00_00_00_13_14_15_16_17
       );
       expect_eq!(
-        mask_char_and_above::<0x20>(0x10_11_12_13_14_15_16_17),
+        mask_above(0x10_11_12_13_14_15_16_17, 12),
         0x10_11_12_13_14_15_16_17
       );
     }
   }
 }
 
-pub struct StringHash(u64);
+#[cfg(target_feature = "avx2")]
+pub fn str_hash(bytes: &[u8]) -> u64 {
+  crate::str_hash_x86::str_hash_fast(bytes)
+}
 
-impl Hasher for StringHash {
-  #[cfg(target_feature = "avx2")]
-  fn write(&mut self, bytes: &[u8]) {
-    debug_assert_eq!(self.0, 0);
-    self.0 = crate::str_hash_x86::str_hash_fast(bytes);
-  }
-
-  #[cfg(not(target_feature = "avx2"))]
-  fn write(&mut self, bytes: &[u8]) {
-    debug_assert_eq!(self.0, 0);
-    self.0 = generic_hasher::str_hash(bytes);
-  }
-
-  fn write_u8(&mut self, _: u8) {
-    unimplemented!();
-  }
-
-  fn finish(&self) -> u64 {
-    self.0
-  }
+#[cfg(not(target_feature = "avx2"))]
+pub fn str_hash(bytes: &[u8]) -> u64 {
+  generic_hasher::str_hash(bytes)
 }
 
 #[cfg(test)]
 mod tests {
-  use std::hash::{BuildHasher, Hasher};
-
   use googletest::prelude::*;
   use itertools::Itertools;
   use rand::{
@@ -114,13 +80,7 @@ mod tests {
     Rng, SeedableRng,
   };
 
-  use crate::str_hash::{generic_hasher, BuildStringHash};
-
-  fn hash_bytes(bytes: &[u8]) -> u64 {
-    let mut hasher = BuildStringHash.build_hasher();
-    hasher.write(bytes);
-    hasher.finish()
-  }
+  use crate::str_hash::{generic_hasher, str_hash};
 
   #[gtest]
   fn test_str_hash_different_positions() {
@@ -136,10 +96,10 @@ mod tests {
     // Cross page boundary
     page_aligned.0[4093..4101].copy_from_slice(s);
 
-    let expected_hash = hash_bytes(&"test;123".as_bytes()[0..4]);
-    expect_eq!(hash_bytes(&page_aligned.0[0..4]), expected_hash);
-    expect_eq!(hash_bytes(&page_aligned.0[60..64]), expected_hash);
-    expect_eq!(hash_bytes(&page_aligned.0[4093..4097]), expected_hash);
+    let expected_hash = str_hash(&"test;123".as_bytes()[0..4]);
+    expect_eq!(str_hash(&page_aligned.0[0..4]), expected_hash);
+    expect_eq!(str_hash(&page_aligned.0[60..64]), expected_hash);
+    expect_eq!(str_hash(&page_aligned.0[4093..4097]), expected_hash);
   }
 
   #[gtest]
@@ -164,7 +124,7 @@ mod tests {
         .chain(std::iter::once(b';'))
         .collect_vec();
 
-      let fast_hash = hash_bytes(&str_bytes[..rand_len]);
+      let fast_hash = str_hash(&str_bytes[..rand_len]);
       let slow_hash = generic_hasher::str_hash(&str_bytes[..rand_len]);
       assert_eq!(fast_hash, slow_hash);
     }

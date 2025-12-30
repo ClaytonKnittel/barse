@@ -1,9 +1,4 @@
-use std::{
-  borrow::Borrow,
-  cmp::Ordering,
-  fmt::Display,
-  hash::{Hash, Hasher},
-};
+use std::{borrow::Borrow, cmp::Ordering, fmt::Display};
 
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
@@ -104,12 +99,6 @@ impl Borrow<[u8]> for InlineString {
   }
 }
 
-impl Hash for InlineString {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    state.write(self.value());
-  }
-}
-
 impl Display for InlineString {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.value_str())
@@ -118,14 +107,11 @@ impl Display for InlineString {
 
 #[cfg(test)]
 mod tests {
-  use std::{
-    cmp::Ordering,
-    hash::{BuildHasher, Hasher},
-  };
+  use std::cmp::Ordering;
 
   use googletest::{expect_that, gtest, prelude::*};
 
-  use crate::str_hash::BuildStringHash;
+  use crate::str_hash::str_hash;
 
   use super::InlineString;
 
@@ -144,7 +130,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
     expect_true!(i1 == i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
-    expect_eq!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+    expect_eq!(str_hash(&i1.bytes), str_hash(&i2.bytes));
   }
 
   #[gtest]
@@ -154,7 +140,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str1.as_bytes()[..5]).unwrap());
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
   }
 
   #[gtest]
@@ -165,16 +151,14 @@ mod tests {
     let i2 = InlineString::new(str2);
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(BuildStringHash.hash_one(&i1), BuildStringHash.hash_one(&i2));
+    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
   }
 
   #[gtest]
   fn test_eq_hash_with_u8_slice() {
-    let mut u8_hash = BuildStringHash.build_hasher();
-    u8_hash.write(&"word;".as_bytes()[0..4]);
     expect_eq!(
-      BuildStringHash.hash_one(InlineString::new("word")),
-      u8_hash.finish()
+      str_hash(&InlineString::new("word").bytes),
+      str_hash("word".as_bytes())
     );
   }
 }
