@@ -130,27 +130,25 @@ impl<'a> Scanner<'a> {
   }
 
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
+    // We want a temp storage of size 2 * Cache::BYTES_PER_BUFFER, but const
+    // expressions are not yet stable, so we instead build a buffer of `u16`s
+    // with Cache::BYTES_PER_BUFFER elements.
     #[repr(align(64))]
-    struct TempStorage([u8; 128]);
+    struct TempStorage([u16; Cache::BYTES_PER_BUFFER]);
 
-    let mut temp_storage = TempStorage([0; 128]);
-    self.cache.aligned_store(temp_storage.0.as_mut_ptr());
+    let mut temp_storage = TempStorage([0; Cache::BYTES_PER_BUFFER]);
+    let temp_storage_ptr = temp_storage.0.as_mut_ptr() as *mut u8;
+    self.cache.aligned_store(temp_storage_ptr);
 
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
       self
         .cache
-        .aligned_store(temp_storage.0[Cache::BYTES_PER_BUFFER..].as_mut_ptr());
+        .aligned_store(unsafe { temp_storage_ptr.add(Cache::BYTES_PER_BUFFER) });
     }
 
-    let encoding = unsafe {
-      read_unaligned(
-        temp_storage
-          .0
-          .get_unchecked(start_offset as usize..)
-          .as_ptr() as *const u64,
-      )
-    };
+    let encoding =
+      unsafe { read_unaligned(temp_storage_ptr.add(start_offset as usize) as *const u64) };
 
     TemperatureReading::from_encoding(encoding)
   }
