@@ -8,6 +8,7 @@ use crate::{
   util::{unaligned_read_would_cross_page_boundary, unlikely, M256_BYTES},
 };
 
+#[cold]
 pub fn read_str_to_m256_slow(s: &[u8]) -> __m256i {
   #[repr(align(32))]
   struct AlignedStorage([u8; M256_BYTES]);
