@@ -1,3 +1,9 @@
+pub struct StringHashResult {
+  pub hash: u64,
+  #[cfg(target_feature = "avx2")]
+  pub masked_str_bytes: std::arch::x86_64::__m256i,
+}
+
 #[cfg(any(test, not(target_feature = "avx2")))]
 mod generic_hasher {
   use std::ptr::read_unaligned;
@@ -61,8 +67,8 @@ mod generic_hasher {
 }
 
 #[cfg(target_feature = "avx2")]
-pub fn str_hash(bytes: &[u8]) -> u64 {
-  crate::str_hash_x86::str_hash_fast(bytes)
+pub fn str_hash(bytes: &[u8]) -> StringHashResult {
+  unsafe { crate::str_hash_x86::str_hash_fast(bytes) }
 }
 
 #[cfg(not(target_feature = "avx2"))]
@@ -82,6 +88,16 @@ mod tests {
 
   use crate::str_hash::{generic_hasher, str_hash};
 
+  #[cfg(target_feature = "avx2")]
+  fn str_hash_for_test(bytes: &[u8]) -> u64 {
+    str_hash(bytes).hash
+  }
+
+  #[cfg(not(target_feature = "avx2"))]
+  fn str_hash_for_test(bytes: &[u8]) -> u64 {
+    str_hash(bytes)
+  }
+
   #[gtest]
   fn test_str_hash_different_positions() {
     #[repr(align(4096))]
@@ -96,10 +112,13 @@ mod tests {
     // Cross page boundary
     page_aligned.0[4093..4101].copy_from_slice(s);
 
-    let expected_hash = str_hash(&"test;123".as_bytes()[0..4]);
-    expect_eq!(str_hash(&page_aligned.0[0..4]), expected_hash);
-    expect_eq!(str_hash(&page_aligned.0[60..64]), expected_hash);
-    expect_eq!(str_hash(&page_aligned.0[4093..4097]), expected_hash);
+    let expected_hash = str_hash_for_test(&"test;123".as_bytes()[0..4]);
+    expect_eq!(str_hash_for_test(&page_aligned.0[0..4]), expected_hash);
+    expect_eq!(str_hash_for_test(&page_aligned.0[60..64]), expected_hash);
+    expect_eq!(
+      str_hash_for_test(&page_aligned.0[4093..4097]),
+      expected_hash
+    );
   }
 
   #[gtest]
@@ -124,7 +143,7 @@ mod tests {
         .chain(std::iter::once(b';'))
         .collect_vec();
 
-      let fast_hash = str_hash(&str_bytes[..rand_len]);
+      let fast_hash = str_hash_for_test(&str_bytes[..rand_len]);
       let slow_hash = generic_hasher::str_hash(&str_bytes[..rand_len]);
       assert_eq!(fast_hash, slow_hash);
     }

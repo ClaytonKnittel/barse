@@ -1,10 +1,13 @@
-use std::fmt::Debug;
+use std::{arch::x86_64::__m256i, fmt::Debug};
 
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, inline_string::InlineString, str_hash::str_hash,
-  temperature_reading::TemperatureReading, util::likely,
+  error::BarseResult,
+  inline_string::InlineString,
+  str_hash::{str_hash, StringHashResult},
+  temperature_reading::TemperatureReading,
+  util::likely,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -73,8 +76,8 @@ impl Entry {
     self.temp_summary.add_reading(reading);
   }
 
-  fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.eq_foreign_str(station)) {
+  fn matches_key_or_initialize(&mut self, masked_str_bytes: __m256i, station: &str) -> bool {
+    if likely(self.key.eq_foreign_str(masked_str_bytes, station)) {
       true
     } else if self.is_default() {
       self.initialize(station);
@@ -135,10 +138,19 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     unsafe { &mut *self.mut_elements_ptr().add(index) }
   }
 
-  fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
+  fn scan_for_entry(
+    &mut self,
+    masked_str_bytes: __m256i,
+    station: &str,
+    start_idx: usize,
+  ) -> &mut Entry {
     let idx = (1..SIZE)
       .map(|i| (start_idx + i) % SIZE)
-      .find(|&idx| self.entry_at_mut(idx).matches_key_or_initialize(station))
+      .find(|&idx| {
+        self
+          .entry_at_mut(idx)
+          .matches_key_or_initialize(masked_str_bytes, station)
+      })
       .expect("No empty bucket found, table is full");
     self.entry_at_mut(idx)
   }
@@ -147,23 +159,36 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     self.find_entry(station).add_reading(reading);
   }
 
-  fn station_hash(&self, station: &str) -> u64 {
+  fn station_hash(&self, station: &str) -> StringHashResult {
     str_hash(station.as_bytes())
   }
 
-  fn station_index(&self, station: &str) -> usize {
-    self.station_hash(station) as usize % SIZE
+  #[cfg(target_feature = "avx2")]
+  fn station_index_and_cached_str(&self, station: &str) -> (usize, std::arch::x86_64::__m256i) {
+    let StringHashResult {
+      hash,
+      masked_str_bytes,
+    } = self.station_hash(station);
+    (hash as usize % SIZE, masked_str_bytes)
+  }
+  #[cfg(not(target_feature = "avx2"))]
+  fn station_index_and_cached_str(&self, station: &str) -> usize {
+    self.station_hash(station).hash as usize % SIZE
   }
 
   fn find_entry(&mut self, station: &str) -> &mut Entry {
-    let idx = self.station_index(station);
+    let (idx, masked_str_bytes) = self.station_index_and_cached_str(station);
 
-    if likely(self.entry_at_mut(idx).matches_key_or_initialize(station)) {
+    if likely(
+      self
+        .entry_at_mut(idx)
+        .matches_key_or_initialize(masked_str_bytes, station),
+    ) {
       return self.entry_at_mut(idx);
     }
 
     // Otherwise we have to search for a bucket.
-    self.scan_for_entry(station, idx)
+    self.scan_for_entry(masked_str_bytes, station, idx)
   }
 }
 

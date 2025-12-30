@@ -1,3 +1,5 @@
+pub const M256_BYTES: usize = 32;
+
 #[inline(always)]
 #[cold]
 fn cold_path() {}

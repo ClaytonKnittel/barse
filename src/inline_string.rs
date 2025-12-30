@@ -54,8 +54,8 @@ impl InlineString {
   }
 
   #[cfg(target_feature = "avx2")]
-  pub fn eq_foreign_str(&self, other: &str) -> bool {
-    inline_str_eq_foreign_str(self, other)
+  pub fn eq_foreign_str(&self, masked_str_bytes: std::arch::x86_64::__m256i, other: &str) -> bool {
+    inline_str_eq_foreign_str(self, masked_str_bytes, other)
   }
 
   #[cfg(not(target_feature = "avx2"))]
@@ -115,6 +115,16 @@ mod tests {
 
   use super::InlineString;
 
+  #[cfg(target_feature = "avx2")]
+  fn str_hash_for_test(bytes: &[u8]) -> u64 {
+    str_hash(bytes).hash
+  }
+
+  #[cfg(not(target_feature = "avx2"))]
+  fn str_hash_for_test(bytes: &[u8]) -> u64 {
+    str_hash(bytes)
+  }
+
   #[gtest]
   fn test_construction() {
     let str1 = "testabcd";
@@ -130,7 +140,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
     expect_true!(i1 == i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
-    expect_eq!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_eq!(str_hash_for_test(&i1.bytes), str_hash_for_test(&i2.bytes));
   }
 
   #[gtest]
@@ -140,7 +150,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str1.as_bytes()[..5]).unwrap());
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash_for_test(&i1.bytes), str_hash_for_test(&i2.bytes));
   }
 
   #[gtest]
@@ -151,14 +161,14 @@ mod tests {
     let i2 = InlineString::new(str2);
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash_for_test(&i1.bytes), str_hash_for_test(&i2.bytes));
   }
 
   #[gtest]
   fn test_eq_hash_with_u8_slice() {
     expect_eq!(
-      str_hash(&InlineString::new("word").bytes),
-      str_hash("word".as_bytes())
+      str_hash_for_test(&InlineString::new("word").bytes),
+      str_hash_for_test("word".as_bytes())
     );
   }
 }

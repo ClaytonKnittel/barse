@@ -122,7 +122,7 @@ fn run() -> BarseResult {
     "My hash quality: {}",
     compute_hash_quality(
       &weather_stations,
-      |station| { str_hash(station.as_bytes()) },
+      |station| { str_hash(station.as_bytes()).hash },
       CAP
     )
   );
