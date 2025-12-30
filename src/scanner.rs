@@ -136,7 +136,6 @@ impl<'a> Scanner<'a> {
     let mut temp_storage = TempStorage([0; 128]);
     self.cache.aligned_store(temp_storage.0.as_mut_ptr());
 
-    // TODO: This conditional is unnecessary.
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
       self
