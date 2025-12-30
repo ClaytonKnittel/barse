@@ -6,7 +6,9 @@ use std::{
 use brc::build_input::{get_weather_stations, output_lines};
 use rand::{rngs::StdRng, SeedableRng};
 
-use crate::{error::BarseResult, temperature_reading::TemperatureReading};
+use crate::{
+  error::BarseResult, scanner::SCANNER_CACHE_SIZE, temperature_reading::TemperatureReading,
+};
 
 const ALIGNMENT: usize = 32;
 
@@ -39,7 +41,7 @@ impl AlignedInput {
   }
 
   pub fn padded_slice(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.bytes, self.len.next_multiple_of(2 * ALIGNMENT)) }
+    unsafe { slice::from_raw_parts(self.bytes, self.len.next_multiple_of(SCANNER_CACHE_SIZE)) }
   }
 }
 impl Drop for AlignedInput {
