@@ -67,7 +67,6 @@ struct Entry {
 impl Entry {
   fn initialize(&mut self, station: &str) {
     self.key.initialize(station);
-    self.temp_summary.initialize();
   }
 
   fn add_reading(&mut self, reading: TemperatureReading) {
@@ -139,7 +138,14 @@ impl<const SIZE: usize, H: BuildHasher> WeatherStationTable<SIZE, H> {
   pub fn with_hasher(hasher: H) -> Self {
     let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
     let buckets = MmapOptions::new().len(size).map_anon().unwrap();
-    Self { buckets, hasher }
+    buckets.advise(memmap2::Advice::HugePage).unwrap();
+    let mut s = Self { buckets, hasher };
+
+    for i in 0..SIZE {
+      s.entry_at_mut(i).temp_summary.initialize();
+    }
+
+    s
   }
 
   pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
