@@ -45,6 +45,11 @@ impl<'a> Scanner<'a> {
     }
   }
 
+  /// Finds the point we should start iterating from, assuming the first
+  /// `BUFFER_OVERLAP` bytes are overlapping with the previous buffer. We
+  /// choose to start iterating after the last newline character found in the
+  /// overlap region, since this is naturally where the scanner iterating over
+  /// the previous slice would stop.
   fn find_starting_point_in_overlap(buffer: &[u8]) -> (&[u8], u64, u64, u32) {
     let (mut semicolon_mask, mut newline_mask) = read_next_from_buffer(buffer);
     let mut buffer_offset = 0;
