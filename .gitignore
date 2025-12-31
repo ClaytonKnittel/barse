@@ -1,4 +1,5 @@
 .DS_Store
+/other_submissions
 /target
 *.s
 *.svg
