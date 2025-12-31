@@ -10,7 +10,7 @@ use crate::{
   error::BarseResult, scanner::SCANNER_CACHE_SIZE, temperature_reading::TemperatureReading,
 };
 
-const ALIGNMENT: usize = 32;
+const ALIGNMENT: usize = SCANNER_CACHE_SIZE;
 
 #[repr(align(32))]
 pub struct AlignedBuffer<const N: usize> {
