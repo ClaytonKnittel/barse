@@ -66,12 +66,11 @@ impl<'a> Display for WeatherStation<'a> {
 pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
 ) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
-  Scanner::new(input).try_fold(
-    WeatherStationTable::new()?,
-    |mut map, (station, temp)| -> BarseResult<_> {
+  Ok(
+    Scanner::new(input).fold(WeatherStationTable::new()?, |mut map, (station, temp)| {
       map.add_reading(station, temp);
-      Ok(map)
-    },
+      map
+    }),
   )
 }
 
