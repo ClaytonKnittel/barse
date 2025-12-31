@@ -24,7 +24,7 @@ overflow-checks = false
 codegen-units = 1
 lto = "fat"
 panic = "abort"
-# strip = "symbols"
+strip = "symbols"
 
 [profile.inspect]
 inherits = "release"
