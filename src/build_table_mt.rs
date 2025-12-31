@@ -13,15 +13,18 @@ pub fn build_temperature_reading_table_from_bytes(
     .map(|nonzero| nonzero.get())
     .unwrap_or(1);
 
+  let map = Arc::new(WeatherStationTable::<TABLE_SIZE>::new()?);
   let slicer = Arc::new(unsafe { crate::slicer::Slicer::new(input) });
 
   let threads = (0..thread_count)
     .map(|_| {
       let slicer = slicer.clone();
+      let map = map.clone();
       std::thread::spawn(move || {
         while let Some(slice) = slicer.next_slice() {
           for (station, temp) in slice {
             //
+            map.add_reading(station, temp);
           }
         }
       })

@@ -3,13 +3,17 @@ use std::{cmp::Ordering, fmt::Display, fs::File, slice};
 use memmap2::{Advice, MmapOptions};
 
 #[cfg(not(feature = "multithreaded"))]
-use crate::build_table::build_temperature_reading_table_from_bytes;
+use crate::{
+  build_table::build_temperature_reading_table_from_bytes, temperature_summary::TemperatureSummary,
+};
 #[cfg(feature = "multithreaded")]
-use crate::build_table_mt::build_temperature_reading_table_from_bytes;
+use crate::{
+  build_table_mt::build_temperature_reading_table_from_bytes,
+  temperature_summary_mt::TemperatureSummary,
+};
 
 use crate::{
-  error::BarseResult, scanner::SCANNER_CACHE_SIZE, str_hash::TABLE_SIZE,
-  table::WeatherStationTable, temp_summary::TemperatureSummary,
+  error::BarseResult, scanner::SCANNER_CACHE_SIZE, str_hash::TABLE_SIZE, table::WeatherStationTable,
 };
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {

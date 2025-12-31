@@ -3,9 +3,14 @@ use std::fmt::Debug;
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, str_hash::str_hash, table_entry::Entry, temp_summary::TemperatureSummary,
+  error::BarseResult, str_hash::str_hash, table_entry::Entry,
   temperature_reading::TemperatureReading, util::likely,
 };
+
+#[cfg(not(feature = "multithreaded"))]
+use crate::temperature_summary::TemperatureSummary;
+#[cfg(feature = "multithreaded")]
+use crate::temperature_summary_mt::TemperatureSummary;
 
 pub struct WeatherStationTable<const SIZE: usize> {
   buckets: MmapMut,
@@ -49,18 +54,6 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     unsafe { &mut *self.mut_elements_ptr().add(index) }
   }
 
-  fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
-    let idx = (1..SIZE)
-      .map(|i| (start_idx + i) % SIZE)
-      .find(|&idx| self.entry_at_mut(idx).matches_key_or_initialize(station))
-      .expect("No empty bucket found, table is full");
-    self.entry_at_mut(idx)
-  }
-
-  pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
-    self.find_entry(station).add_reading(reading);
-  }
-
   fn station_hash(&self, station: &str) -> u64 {
     str_hash(station.as_bytes())
   }
@@ -68,7 +61,36 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
   fn station_index(&self, station: &str) -> usize {
     self.station_hash(station) as usize % SIZE
   }
+}
 
+#[cfg(feature = "multithreaded")]
+impl<const SIZE: usize> WeatherStationTable<SIZE> {
+  fn find_entry(&self, station: &str) -> &Entry {
+    let idx = self.station_index(station);
+
+    if likely(self.entry_at(idx).matches_key_or_initialize(station)) {
+      return self.entry_at(idx);
+    }
+
+    // Otherwise we have to search for a bucket.
+    self.scan_for_entry(station, idx)
+  }
+
+  pub fn add_reading(&self, station: &str, reading: TemperatureReading) {
+    self.find_entry(station).add_reading(reading);
+  }
+
+  fn scan_for_entry(&self, station: &str, start_idx: usize) -> &Entry {
+    let idx = (1..SIZE)
+      .map(|i| (start_idx + i) % SIZE)
+      .find(|&idx| self.entry_at(idx).matches_key_or_initialize(station))
+      .expect("No empty bucket found, table is full");
+    self.entry_at(idx)
+  }
+}
+
+#[cfg(not(feature = "multithreaded"))]
+impl<const SIZE: usize> WeatherStationTable<SIZE> {
   fn find_entry(&mut self, station: &str) -> &mut Entry {
     let idx = self.station_index(station);
 
@@ -78,6 +100,18 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
 
     // Otherwise we have to search for a bucket.
     self.scan_for_entry(station, idx)
+  }
+
+  pub fn add_reading(&mut self, station: &str, reading: TemperatureReading) {
+    self.find_entry(station).add_reading(reading);
+  }
+
+  fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
+    let idx = (1..SIZE)
+      .map(|i| (start_idx + i) % SIZE)
+      .find(|&idx| self.entry_at_mut(idx).matches_key_or_initialize(station))
+      .expect("No empty bucket found, table is full");
+    self.entry_at_mut(idx)
   }
 }
 
@@ -107,6 +141,7 @@ impl<'a, const SIZE: usize> Iterator for WeatherStationIterator<'a, SIZE> {
   }
 }
 
+#[cfg(not(feature = "multithreaded"))]
 #[cfg(test)]
 mod tests {
   use googletest::prelude::*;

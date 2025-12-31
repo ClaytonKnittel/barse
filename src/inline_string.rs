@@ -40,6 +40,20 @@ impl InlineString {
     }
   }
 
+  #[cfg(feature = "multithreaded")]
+  pub fn initialize(&self, contents: &str) {
+    debug_assert!(
+      contents.len() <= MAX_STRING_LEN,
+      "{} > {}",
+      contents.len(),
+      MAX_STRING_LEN
+    );
+    let unsafe_mut_self = unsafe { &mut *(self as *const Self as *mut Self) };
+    unsafe_mut_self.memcpy_no_libc(contents);
+    unsafe_mut_self.len = contents.len() as u32;
+  }
+
+  #[cfg(not(feature = "multithreaded"))]
   pub fn initialize(&mut self, contents: &str) {
     debug_assert!(
       contents.len() <= MAX_STRING_LEN,
@@ -47,7 +61,6 @@ impl InlineString {
       contents.len(),
       MAX_STRING_LEN
     );
-    // TODO: see if I can avoid the memcpy call
     self.memcpy_no_libc(contents);
     self.len = contents.len() as u32;
   }
