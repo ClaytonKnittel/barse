@@ -528,4 +528,29 @@ mod tests {
     );
     expect_that!(scanner.next(), none());
   }
+
+  #[gtest]
+  fn test_iter_from_midpoint_newline_at_start_of_next() {
+    let buffer = AlignedBuffer {
+      buffer: *b"city1;3.4\ncity2;\
+                 5.6\ncity3;7.8\nci\
+                 ti4;9.0\ncity6;0.\
+                 1\nlong city1;2.3\
+                 \ncity8;4.5\n\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    let mut scanner = Scanner::from_midpoint(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("long city1"), eq(TemperatureReading::new(23))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("city8"), eq(TemperatureReading::new(45))))
+    );
+    expect_that!(scanner.next(), none());
+  }
 }
