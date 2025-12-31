@@ -43,17 +43,19 @@ impl<'a> Scanner<'a> {
     }
   }
 
-  fn find_starting_point_in_overlap(mut buffer: &[u8]) -> (&[u8], u64, u64, u32) {
+  fn find_starting_point_in_overlap(buffer: &[u8]) -> (&[u8], u64, u64, u32) {
     let (mut semicolon_mask, mut newline_mask) = read_next_from_buffer(buffer);
+    let mut buffer_offset = 0;
     #[allow(clippy::reversed_empty_ranges)]
-    for _ in 1..(BUFFER_OVERLAP / BYTES_PER_BUFFER) {
-      let (next_semicolon_mask, next_newline_mask) = read_next_from_buffer(buffer);
+    for offset in (BYTES_PER_BUFFER..BUFFER_OVERLAP).step_by(BYTES_PER_BUFFER) {
+      let (next_semicolon_mask, next_newline_mask) = read_next_from_buffer(&buffer[offset..]);
       if next_newline_mask != 0 {
-        buffer = &buffer[BYTES_PER_BUFFER..];
+        buffer_offset = offset;
         semicolon_mask = next_semicolon_mask;
         newline_mask = next_newline_mask;
       }
     }
+    let buffer = &buffer[buffer_offset..];
     debug_assert_ne!(newline_mask, 0);
     if newline_mask == 0 {
       unsafe { unreachable_unchecked() };
@@ -61,7 +63,7 @@ impl<'a> Scanner<'a> {
 
     let cur_offset = newline_mask.ilog2();
     if cur_offset == BYTES_PER_BUFFER as u32 - 1 {
-      buffer = unsafe { buffer.get_unchecked(BYTES_PER_BUFFER..) };
+      let buffer = &buffer[BYTES_PER_BUFFER..];
       let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
       (buffer, semicolon_mask, newline_mask, 0)
     } else {
