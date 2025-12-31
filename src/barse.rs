@@ -66,7 +66,7 @@ pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
 ) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
   Ok(
-    Scanner::new(input).fold(WeatherStationTable::new()?, |mut map, (station, temp)| {
+    Scanner::from_start(input).fold(WeatherStationTable::new()?, |mut map, (station, temp)| {
       map.add_reading(station, temp);
       map
     }),

@@ -1,7 +1,7 @@
-use std::{ptr::read_unaligned, slice};
+use std::{hint::unreachable_unchecked, ptr::read_unaligned, slice};
 
 use crate::{
-  temperature_reading::TemperatureReading,
+  temperature_reading::{TemperatureReading, MAX_TEMP_READING_LEN},
   util::{unaligned_read_would_cross_page_boundary, unlikely},
 };
 
@@ -11,6 +11,11 @@ use crate::scanner_cache::{read_next_from_buffer, BYTES_PER_BUFFER};
 use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BUFFER};
 
 const MAX_STATION_NAME_LEN: usize = 50;
+const BUFFER_OVERLAP: usize = (MAX_STATION_NAME_LEN
+  + std::mem::size_of_val(&b';')
+  + MAX_TEMP_READING_LEN
+  + std::mem::size_of_val(&b'\n'))
+.next_multiple_of(BYTES_PER_BUFFER);
 
 pub(crate) const SCANNER_CACHE_SIZE: usize = BYTES_PER_BUFFER;
 
@@ -27,7 +32,7 @@ pub struct Scanner<'a> {
 
 impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
-  pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
+  pub fn from_start<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
     let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
     Self {
@@ -36,6 +41,58 @@ impl<'a> Scanner<'a> {
       newline_mask,
       cur_offset: 0,
     }
+  }
+
+  fn find_starting_point_in_overlap(mut buffer: &[u8]) -> (&[u8], u64, u64, u32) {
+    let (mut semicolon_mask, mut newline_mask) = read_next_from_buffer(buffer);
+    #[allow(clippy::reversed_empty_ranges)]
+    for _ in 1..(BUFFER_OVERLAP / BYTES_PER_BUFFER) {
+      let (next_semicolon_mask, next_newline_mask) = read_next_from_buffer(buffer);
+      if next_newline_mask != 0 {
+        buffer = &buffer[BYTES_PER_BUFFER..];
+        semicolon_mask = next_semicolon_mask;
+        newline_mask = next_newline_mask;
+      }
+    }
+    debug_assert_ne!(newline_mask, 0);
+    if newline_mask == 0 {
+      unsafe { unreachable_unchecked() };
+    }
+
+    let cur_offset = newline_mask.ilog2();
+    if cur_offset == BYTES_PER_BUFFER as u32 - 1 {
+      buffer = unsafe { buffer.get_unchecked(BYTES_PER_BUFFER..) };
+      let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
+      (buffer, semicolon_mask, newline_mask, 0)
+    } else {
+      let remove_mask = !2u64.wrapping_shl(cur_offset).wrapping_sub(1);
+      (
+        buffer,
+        semicolon_mask & remove_mask,
+        newline_mask & remove_mask,
+        cur_offset + 1,
+      )
+    }
+  }
+
+  pub fn from_midpoint<'b: 'a>(buffer: &'b [u8]) -> Self {
+    debug_assert!(buffer.len() >= BUFFER_OVERLAP);
+    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
+    let (buffer, semicolon_mask, newline_mask, cur_offset) =
+      Self::find_starting_point_in_overlap(buffer);
+    let mut scanner = Self {
+      buffer,
+      semicolon_mask,
+      newline_mask,
+      cur_offset,
+    };
+
+    if scanner.semicolon_mask == 1 << (BYTES_PER_BUFFER - 1) {
+      scanner.read_next_assuming_available();
+      scanner.cur_offset = 0;
+    }
+
+    scanner
   }
 
   fn read_next_assuming_available(&mut self) {
@@ -213,7 +270,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((
@@ -236,7 +293,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((eq("Ab"), eq(TemperatureReading::new(208))))
@@ -268,7 +325,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     for _ in 0..8 {
       expect_that!(
         scanner.next(),
@@ -297,7 +354,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((
@@ -327,7 +384,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((
@@ -357,7 +414,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((
@@ -387,7 +444,7 @@ mod tests {
       ],
     };
 
-    let mut scanner = Scanner::new(&buffer.buffer);
+    let mut scanner = Scanner::from_start(&buffer.buffer);
     expect_that!(
       scanner.next(),
       some((eq("P1"), eq(TemperatureReading::new(12))))
@@ -415,7 +472,7 @@ mod tests {
   fn test_against_small() {
     let input = random_input_file(13, 10_000, 1_000).unwrap();
 
-    let scanner = Scanner::new(input.padded_slice());
+    let scanner = Scanner::from_start(input.padded_slice());
     let simple_scanner = simple_scanner_iter(input.padded_slice());
     expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
   }
@@ -425,8 +482,50 @@ mod tests {
   fn test_against_large() {
     let input = random_input_file(17, 400_000, 10_000).unwrap();
 
-    let scanner = Scanner::new(input.padded_slice());
+    let scanner = Scanner::from_start(input.padded_slice());
     let simple_scanner = simple_scanner_iter(input.padded_slice());
     expect_eq!(scanner.collect_vec(), simple_scanner.collect_vec());
+  }
+
+  #[gtest]
+  fn test_iter_from_midpoint_name_crosses_over() {
+    let buffer = AlignedBuffer {
+      buffer: *b"city1;3.4\ncity2;\
+                 5.6\ncity3;7.8\nci\
+                 ti4;9.0\ncity6;0.\
+                 1\ncity7;2.3\ncity\
+                 8;4.5\n\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    let mut scanner = Scanner::from_midpoint(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("city8"), eq(TemperatureReading::new(45))))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_from_midpoint_newline_at_end() {
+    let buffer = AlignedBuffer {
+      buffer: *b"city1;3.4\ncity2;\
+                 5.6\ncity3;7.8\nci\
+                 ti4;9.0\ncity6;0.\
+                 1\nlong city;2.3\n\
+                 city8;4.5\n\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    let mut scanner = Scanner::from_midpoint(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("city8"), eq(TemperatureReading::new(45))))
+    );
+    expect_that!(scanner.next(), none());
   }
 }

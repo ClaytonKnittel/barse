@@ -6,6 +6,9 @@ const PARSE_TABLE_SHIFT: u32 = 13;
 const PARSE_TABLE_SIZE: usize = 1 << PARSE_TABLE_SHIFT;
 const PARSE_MAGIC: u64 = 0xd6df3436fe286720;
 
+pub const MIN_TEMP_READING_LEN: usize = 3;
+pub const MAX_TEMP_READING_LEN: usize = 5;
+
 const fn int_val_to_str_encoding(val: i16) -> u64 {
   let mut ascii_encoding = 0;
   let mut ascii_idx = 0;
@@ -39,7 +42,7 @@ const fn int_val_to_str_encoding(val: i16) -> u64 {
     &mut ascii_idx,
     (pos_val % 10) as u8 + b'0',
   );
-  if ascii_idx < 5 {
+  if ascii_idx < MAX_TEMP_READING_LEN as u32 {
     write_char(&mut ascii_encoding, &mut ascii_idx, b'\n');
   }
 
@@ -90,7 +93,7 @@ impl TemperatureReading {
   }
 
   fn u64_encoding_to_self(encoding: u64) -> Self {
-    let mask = if encoding.to_ne_bytes()[3] == b'\n' {
+    let mask = if encoding.to_ne_bytes()[MIN_TEMP_READING_LEN] == b'\n' {
       0x0000_0000_ffff_ffff
     } else {
       debug_assert!(
@@ -128,7 +131,7 @@ impl FromStr for TemperatureReading {
   type Err = BarseError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    debug_assert!((3..=5).contains(&s.len()));
+    debug_assert!((MIN_TEMP_READING_LEN..=MAX_TEMP_READING_LEN).contains(&s.len()));
     debug_assert_eq!(s.as_bytes()[s.len() - 2], b'.');
     Ok(Self::parse_float_magic(s))
   }
