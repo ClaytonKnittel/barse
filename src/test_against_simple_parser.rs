@@ -1,8 +1,13 @@
 use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 
-use crate::{barse::build_temperature_reading_table_from_bytes, test_util::random_input_file};
+use crate::test_util::random_input_file;
 use googletest::prelude::*;
 use itertools::Itertools;
+
+#[cfg(not(feature = "multithreaded"))]
+use crate::build_table::build_temperature_reading_table_from_bytes;
+#[cfg(feature = "multithreaded")]
+use crate::build_table_mt::build_temperature_reading_table_from_bytes;
 
 struct TemperatureSummary {
   min: i32,

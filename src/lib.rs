@@ -1,6 +1,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 pub mod barse;
+#[cfg(not(feature = "multithreaded"))]
+mod build_table;
+#[cfg(feature = "multithreaded")]
+mod build_table_mt;
 pub mod error;
 pub mod inline_string;
 pub mod print_summary;
