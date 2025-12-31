@@ -11,7 +11,9 @@ use crate::scanner_cache::{read_next_from_buffer, BYTES_PER_BUFFER};
 use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BUFFER};
 
 const MAX_STATION_NAME_LEN: usize = 50;
-const BUFFER_OVERLAP: usize = (MAX_STATION_NAME_LEN
+/// The amount of overlapping bytes between consecutive buffers in
+/// multithreaded mode.
+pub const BUFFER_OVERLAP: usize = (MAX_STATION_NAME_LEN
   + std::mem::size_of_val(&b';')
   + MAX_TEMP_READING_LEN
   + std::mem::size_of_val(&b'\n'))

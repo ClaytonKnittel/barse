@@ -9,6 +9,8 @@ pub mod scanner;
 mod scanner_cache;
 #[cfg(target_feature = "avx2")]
 mod scanner_cache_x86;
+#[cfg(feature = "multithreaded")]
+mod slicer;
 #[cfg(target_feature = "avx2")]
 mod str_cmp_x86;
 pub mod str_hash;
