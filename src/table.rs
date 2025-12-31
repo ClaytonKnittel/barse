@@ -3,45 +3,9 @@ use std::fmt::Debug;
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, inline_string::InlineString, str_hash::str_hash,
-  temp_summary::TemperatureSummary, temperature_reading::TemperatureReading, util::likely,
+  error::BarseResult, str_hash::str_hash, table_entry::Entry, temp_summary::TemperatureSummary,
+  temperature_reading::TemperatureReading, util::likely,
 };
-
-#[derive(Default, Clone)]
-struct Entry {
-  key: InlineString,
-  temp_summary: TemperatureSummary,
-}
-
-impl Entry {
-  fn initialize(&mut self, station: &str) {
-    self.key.initialize(station);
-  }
-
-  fn add_reading(&mut self, reading: TemperatureReading) {
-    debug_assert!(!self.is_default());
-    self.temp_summary.add_reading(reading);
-  }
-
-  fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.eq_foreign_str(station)) {
-      true
-    } else if self.is_default() {
-      self.initialize(station);
-      true
-    } else {
-      false
-    }
-  }
-
-  fn is_default(&self) -> bool {
-    self.key.is_default()
-  }
-
-  fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
-    (self.key.value_str(), &self.temp_summary)
-  }
-}
 
 pub struct WeatherStationTable<const SIZE: usize> {
   buckets: MmapMut,
@@ -55,7 +19,7 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
 
     let mut s = Self { buckets };
     for i in 0..SIZE {
-      s.entry_at_mut(i).temp_summary.initialize();
+      s.entry_at_mut(i).initialize_to_default();
     }
     Ok(s)
   }

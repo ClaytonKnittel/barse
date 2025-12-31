@@ -21,6 +21,7 @@ pub mod str_hash;
 #[cfg(target_feature = "avx2")]
 pub mod str_hash_x86;
 pub mod table;
+mod table_entry;
 mod temp_summary;
 pub mod temperature_reading;
 #[cfg(test)]
