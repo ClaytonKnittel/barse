@@ -26,6 +26,11 @@ lto = "fat"
 panic = "abort"
 # strip = "symbols"
 
+[profile.inspect]
+inherits = "release"
+debug = 2
+strip = "none"
+
 [profile.profiled]
 inherits = "release"
 opt-level = 3
