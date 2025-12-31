@@ -9,9 +9,8 @@ use crate::{
 
 const M256_BYTES: usize = 32;
 
-#[cold]
 fn cmp_str_slow(inline_str: &InlineString, other: &str) -> bool {
-  inline_str.value_str() == other
+  (0..inline_str.len()).all(|i| inline_str.value()[i] == other.as_bytes()[i])
 }
 
 fn foreign_str_unknown_bytes_mask(len: usize) -> __m256i {
@@ -55,11 +54,9 @@ pub fn inline_str_eq_foreign_str(inline_str: &InlineString, other: &str) -> bool
   let len = inline_str.len();
   if unlikely(len != other.len()) {
     false
-  } else if len > M256_BYTES
-    || unlikely(unaligned_read_would_cross_page_boundary::<__m256i>(
-      other.as_ptr(),
-    ))
-  {
+  } else if unlikely(
+    len > M256_BYTES || unaligned_read_would_cross_page_boundary::<__m256i>(other.as_ptr()),
+  ) {
     cmp_str_slow(inline_str, other)
   } else {
     unsafe { cmp_str_fast_avx(inline_str, other) }
