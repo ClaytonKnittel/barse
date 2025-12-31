@@ -1,6 +1,6 @@
 use crate::{
-  inline_string::InlineString, temp_summary::TemperatureSummary,
-  temperature_reading::TemperatureReading, util::likely,
+  inline_string::InlineString, temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary, util::likely,
 };
 
 #[derive(Default, Clone)]

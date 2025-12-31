@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, str_hash::str_hash, table_entry::Entry, temp_summary::TemperatureSummary,
-  temperature_reading::TemperatureReading, util::likely,
+  error::BarseResult, str_hash::str_hash, table_entry::Entry,
+  temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary, util::likely,
 };
 
 pub struct WeatherStationTable<const SIZE: usize> {
