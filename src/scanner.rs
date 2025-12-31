@@ -69,7 +69,7 @@ impl<'a> Scanner<'a> {
       let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
       (buffer, semicolon_mask, newline_mask, 0)
     } else {
-      let remove_mask = !2u64.wrapping_shl(cur_offset).wrapping_sub(1);
+      let remove_mask = !((2 << cur_offset) - 1);
       (
         buffer,
         semicolon_mask & remove_mask,
@@ -84,19 +84,12 @@ impl<'a> Scanner<'a> {
     debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
     let (buffer, semicolon_mask, newline_mask, cur_offset) =
       Self::find_starting_point_in_overlap(buffer);
-    let mut scanner = Self {
+    Self {
       buffer,
       semicolon_mask,
       newline_mask,
       cur_offset,
-    };
-
-    if scanner.semicolon_mask == 1 << (BYTES_PER_BUFFER - 1) {
-      scanner.read_next_assuming_available();
-      scanner.cur_offset = 0;
     }
-
-    scanner
   }
 
   fn read_next_assuming_available(&mut self) {
@@ -193,6 +186,23 @@ impl<'a> Scanner<'a> {
       self.cur_offset = 0;
     }
 
+    let prev_buffer = unsafe {
+      std::slice::from_raw_parts(
+        self.buffer.as_ptr().byte_sub(BYTES_PER_BUFFER),
+        2 * BYTES_PER_BUFFER,
+      )
+    };
+
+    debug_assert!(
+      !station_name.contains('\n'),
+      "Station name invalid: \"{station_name}\": [{:?}; {}], ; {:016x}, \\n {:016x}, {}: [{}]",
+      self.buffer.as_ptr(),
+      self.buffer.len(),
+      self.semicolon_mask,
+      self.newline_mask,
+      self.cur_offset,
+      str::from_utf8(prev_buffer).unwrap()
+    );
     Some(station_name)
   }
 
@@ -600,6 +610,51 @@ mod tests {
         eq("This city ain't so bad either"),
         eq(TemperatureReading::new(23))
       ))
+    );
+    expect_that!(scanner.next(), none());
+  }
+
+  #[gtest]
+  fn test_iter_from_midpoint_no_leading_semicolon() {
+    let buffer = AlignedBuffer {
+      buffer: *b"Kabinda;-17.5\nAb\
+                 akaliki;16.8\nTro\
+                 yes;31.9\nR\xc3\xabo Ca\
+                 ribe;2.4\nUelzen;\
+                 63.2\nMilton Keyn\
+                 es;56.0\nZemrane;\
+                 18.2\nImola;49.9\n\
+                 Fulshear;23.9\nSa\
+                 ndy Shores;15.0\n\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    let mut scanner = Scanner::from_midpoint(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((eq("Uelzen"), eq(TemperatureReading::new(632))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Milton Keynes"), eq(TemperatureReading::new(560))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Zemrane"), eq(TemperatureReading::new(182))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Imola"), eq(TemperatureReading::new(499))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Fulshear"), eq(TemperatureReading::new(239))))
+    );
+    expect_that!(
+      scanner.next(),
+      some((eq("Sandy Shores"), eq(TemperatureReading::new(150))))
     );
     expect_that!(scanner.next(), none());
   }
