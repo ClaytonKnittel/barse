@@ -10,6 +10,7 @@ use crate::{
 const M256_BYTES: usize = 32;
 
 fn cmp_str_slow(inline_str: &InlineString, other: &str) -> bool {
+  // Manually compare strings to avoid calling libc::strcmp
   (0..inline_str.len()).all(|i| inline_str.value()[i] == other.as_bytes()[i])
 }
 

@@ -29,6 +29,8 @@ impl InlineString {
     self.len as usize
   }
 
+  /// Performs a memcpy from contents to self.value() without calling
+  /// libc::memcpy.
   fn memcpy_no_libc(&mut self, contents: &str) {
     for i in 0..contents.len().min(MAX_STRING_LEN) {
       unsafe {
