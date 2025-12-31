@@ -64,8 +64,8 @@ fn compress_lower_nibbles(v: u128) -> u64 {
 }
 
 fn scramble_u64(v: u64) -> u64 {
-  const MAGIC: u64 = 0x800800020020;
-  v.wrapping_mul(MAGIC) >> 47
+  const MAGIC: u64 = 0x8000040010001;
+  v.wrapping_mul(MAGIC) >> 46
 }
 
 fn new_hash(bytes: &str) -> u64 {
@@ -77,7 +77,7 @@ fn new_hash(bytes: &str) -> u64 {
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const CAP: usize = 131072;
+  const CAP: usize = 262144;
 
   const BELOW: usize = 32;
   println!(
