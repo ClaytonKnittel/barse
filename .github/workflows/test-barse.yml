@@ -28,6 +28,10 @@ jobs:
             echo "RUSTFLAGS=-C target-feature=+avx2" >> $GITHUB_ENV
           fi
       - name: Clippy
-        run: cargo clippy --no-deps -- -D warnings
+        run: cargo clippy --no-deps --no-default-features -- -D warnings
+      - name: Clippy multithreaded
+        run: cargo clippy --no-deps --no-default-features --features="multithreaded" -- -D warnings
       - name: Test
-        run: cargo test --profile test -- --include-ignored
+        run: cargo test --profile test --no-default-features -- --include-ignored
+      - name: Test multithreaded
+        run: cargo test --profile test --no-default-features --features="multithreaded" -- --include-ignored

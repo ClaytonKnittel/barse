@@ -3,95 +3,9 @@ use std::fmt::Debug;
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, inline_string::InlineString, str_hash::str_hash,
-  temperature_reading::TemperatureReading, util::likely,
+  error::BarseResult, str_hash::str_hash, table_entry::Entry,
+  temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary, util::likely,
 };
-
-#[derive(Debug, Clone, Copy)]
-pub struct TemperatureSummary {
-  min: TemperatureReading,
-  max: TemperatureReading,
-  total: i64,
-  count: u32,
-}
-
-impl TemperatureSummary {
-  fn initialize(&mut self) {
-    self.min = TemperatureReading::new(i16::MAX);
-    self.max = TemperatureReading::new(i16::MIN);
-    debug_assert_eq!(self.total, 0);
-    debug_assert_eq!(self.count, 0);
-  }
-
-  pub fn min(&self) -> TemperatureReading {
-    self.min
-  }
-
-  pub fn max(&self) -> TemperatureReading {
-    self.max
-  }
-
-  pub fn avg(&self) -> TemperatureReading {
-    let rounding_offset = self.count as i64 / 2;
-    let avg = (self.total + rounding_offset).div_euclid(self.count as i64);
-    debug_assert!((i16::MIN as i64..=i16::MAX as i64).contains(&avg));
-    TemperatureReading::new(avg as i16)
-  }
-
-  pub fn add_reading(&mut self, temp: TemperatureReading) {
-    self.min = self.min.min(temp);
-    self.max = self.max.max(temp);
-    self.total += temp.reading() as i64;
-    self.count += 1;
-  }
-}
-
-impl Default for TemperatureSummary {
-  fn default() -> Self {
-    Self {
-      min: TemperatureReading::new(i16::MAX),
-      max: TemperatureReading::new(i16::MIN),
-      total: 0,
-      count: 0,
-    }
-  }
-}
-
-#[derive(Default, Clone)]
-struct Entry {
-  key: InlineString,
-  temp_summary: TemperatureSummary,
-}
-
-impl Entry {
-  fn initialize(&mut self, station: &str) {
-    self.key.initialize(station);
-  }
-
-  fn add_reading(&mut self, reading: TemperatureReading) {
-    debug_assert!(!self.is_default());
-    self.temp_summary.add_reading(reading);
-  }
-
-  fn matches_key_or_initialize(&mut self, station: &str) -> bool {
-    if likely(self.key.eq_foreign_str(station)) {
-      true
-    } else if self.is_default() {
-      self.initialize(station);
-      true
-    } else {
-      false
-    }
-  }
-
-  fn is_default(&self) -> bool {
-    self.key.is_default()
-  }
-
-  fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
-    (self.key.value_str(), &self.temp_summary)
-  }
-}
 
 pub struct WeatherStationTable<const SIZE: usize> {
   buckets: MmapMut,
@@ -105,7 +19,7 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
 
     let mut s = Self { buckets };
     for i in 0..SIZE {
-      s.entry_at_mut(i).temp_summary.initialize();
+      s.entry_at_mut(i).initialize_to_default();
     }
     Ok(s)
   }
@@ -114,6 +28,13 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     WeatherStationIterator {
       table: self,
       index: 0,
+    }
+  }
+
+  pub fn merge(&mut self, other: Self) {
+    for (station, summary) in other.iter() {
+      let entry = self.find_entry(station);
+      entry.merge_summary(summary);
     }
   }
 
@@ -277,6 +198,82 @@ mod tests {
           count: &2,
         }))
       )]
+    );
+  }
+
+  #[gtest]
+  fn test_merge() {
+    let mut table1 = new_table::<16>();
+    table1.add_reading("station1", TemperatureReading::new(123));
+    table1.add_reading("station1", TemperatureReading::new(-456));
+    table1.add_reading("station2", TemperatureReading::new(324));
+
+    let mut table2 = new_table::<16>();
+    table2.add_reading("station1", TemperatureReading::new(-100));
+    table2.add_reading("station2", TemperatureReading::new(-200));
+    table2.add_reading("station2", TemperatureReading::new(-300));
+
+    table1.merge(table2);
+    let elements = table1.iter().collect_vec();
+    expect_that!(
+      elements,
+      unordered_elements_are![
+        (
+          eq(&"station1"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(-456),
+            max: &TemperatureReading::new(123),
+            total: &-433,
+            count: &3,
+          }))
+        ),
+        (
+          eq(&"station2"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(-300),
+            max: &TemperatureReading::new(324),
+            total: &-176,
+            count: &3,
+          }))
+        )
+      ]
+    );
+  }
+
+  #[gtest]
+  fn test_merge_collisions() {
+    let mut table1 = new_table::<16>();
+    table1.add_reading("station station 1", TemperatureReading::new(10));
+    table1.add_reading("station station 2", TemperatureReading::new(30));
+
+    let mut table2 = new_table::<16>();
+    table2.add_reading("station station 2", TemperatureReading::new(-30));
+    table2.add_reading("station station 1", TemperatureReading::new(-100));
+
+    table1.merge(table2);
+    let elements = table1.iter().collect_vec();
+    expect_that!(
+      elements,
+      unordered_elements_are![
+        (
+          eq(&"station station 1"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(-100),
+            max: &TemperatureReading::new(10),
+            total: &-90,
+            count: &2,
+          }))
+        ),
+        (
+          eq(&"station station 2"),
+          derefs_to(pat!(TemperatureSummary {
+            min: &TemperatureReading::new(-30),
+            max: &TemperatureReading::new(30),
+            total: &0,
+            count: &2,
+          }))
+        )
+      ]
     );
   }
 }

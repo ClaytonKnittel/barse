@@ -2,11 +2,14 @@ use std::{cmp::Ordering, fmt::Display, fs::File, slice};
 
 use memmap2::{Advice, MmapOptions};
 
+#[cfg(not(feature = "multithreaded"))]
+use crate::build_table::build_temperature_reading_table_from_bytes;
+#[cfg(feature = "multithreaded")]
+use crate::build_table_mt::build_temperature_reading_table_from_bytes;
+
 use crate::{
-  error::BarseResult,
-  scanner::{Scanner, SCANNER_CACHE_SIZE},
-  str_hash::TABLE_SIZE,
-  table::{TemperatureSummary, WeatherStationTable},
+  error::BarseResult, scanner::SCANNER_CACHE_SIZE, str_hash::TABLE_SIZE,
+  table::WeatherStationTable, temperature_summary::TemperatureSummary,
 };
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
@@ -60,17 +63,6 @@ impl<'a> Display for WeatherStation<'a> {
       self.summary.max()
     )
   }
-}
-
-pub fn build_temperature_reading_table_from_bytes(
-  input: &[u8],
-) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
-  Ok(
-    Scanner::new(input).fold(WeatherStationTable::new()?, |mut map, (station, temp)| {
-      map.add_reading(station, temp);
-      map
-    }),
-  )
 }
 
 pub fn build_temperature_reading_table(
