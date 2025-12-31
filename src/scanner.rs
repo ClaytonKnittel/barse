@@ -8,16 +8,15 @@ use crate::{
 #[cfg(not(target_feature = "avx2"))]
 use crate::scanner_cache::Cache;
 #[cfg(target_feature = "avx2")]
-use crate::scanner_cache_x86::Cache;
+use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BUFFER};
 
 const MAX_STATION_NAME_LEN: usize = 50;
 
-pub(crate) const SCANNER_CACHE_SIZE: usize = Cache::BYTES_PER_BUFFER;
+pub(crate) const SCANNER_CACHE_SIZE: usize = BYTES_PER_BUFFER;
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
   buffer: &'a [u8],
-  cache: Cache,
   semicolon_mask: u64,
   newline_mask: u64,
 
@@ -29,11 +28,10 @@ pub struct Scanner<'a> {
 impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn new<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len().is_multiple_of(Cache::BYTES_PER_BUFFER));
-    let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(buffer);
+    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
+    let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
     Self {
       buffer,
-      cache,
       semicolon_mask,
       newline_mask,
       cur_offset: 0,
@@ -41,17 +39,16 @@ impl<'a> Scanner<'a> {
   }
 
   fn read_next_assuming_available(&mut self) {
-    debug_assert!(self.buffer.len() > Cache::BYTES_PER_BUFFER);
-    self.buffer = unsafe { self.buffer.get_unchecked(Cache::BYTES_PER_BUFFER..) };
-    let (cache, semicolon_mask, newline_mask) = Cache::read_next_from_buffer(self.buffer);
-    self.cache = cache;
+    debug_assert!(self.buffer.len() > BYTES_PER_BUFFER);
+    self.buffer = unsafe { self.buffer.get_unchecked(BYTES_PER_BUFFER..) };
+    let (semicolon_mask, newline_mask) = read_next_from_buffer(self.buffer);
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
   }
 
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == Cache::BYTES_PER_BUFFER {
+    if self.buffer.len() == BYTES_PER_BUFFER {
       return false;
     }
     self.read_next_assuming_available();
@@ -59,7 +56,7 @@ impl<'a> Scanner<'a> {
   }
 
   fn offset_to_ptr(&self, offset: u32) -> *const u8 {
-    debug_assert!(offset <= Cache::BYTES_PER_BUFFER as u32);
+    debug_assert!(offset <= BYTES_PER_BUFFER as u32);
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
@@ -78,8 +75,8 @@ impl<'a> Scanner<'a> {
     // `MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer` more bytes have
     // been read.
     const MAX_ITERS: usize = (MAX_STATION_NAME_LEN + 1)
-      .saturating_sub(Cache::BYTES_PER_BUFFER)
-      .div_ceil(Cache::BYTES_PER_BUFFER);
+      .saturating_sub(BYTES_PER_BUFFER)
+      .div_ceil(BYTES_PER_BUFFER);
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..MAX_ITERS {
       if self.semicolon_mask != 0 {
@@ -114,7 +111,7 @@ impl<'a> Scanner<'a> {
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
     self.cur_offset = semicolon_offset + 1;
-    if semicolon_offset == Cache::BYTES_PER_BUFFER as u32 - 1 {
+    if semicolon_offset == BYTES_PER_BUFFER as u32 - 1 {
       self.read_next_assuming_available();
       self.cur_offset = 0;
     }
@@ -128,29 +125,32 @@ impl<'a> Scanner<'a> {
     debug_assert!(self.newline_mask != 0);
     let newline_offset = self.newline_mask.trailing_zeros();
     self.cur_offset = newline_offset + 1;
-    debug_assert!(self.cur_offset < Cache::BYTES_PER_BUFFER as u32);
+    debug_assert!(self.cur_offset < BYTES_PER_BUFFER as u32);
   }
 
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
-    // We want a temp storage of size 2 * Cache::BYTES_PER_BUFFER, but const
-    // expressions are not yet stable, so we instead build a buffer of `u16`s
-    // with Cache::BYTES_PER_BUFFER elements.
-    #[repr(align(64))]
-    struct TempStorage([u16; Cache::BYTES_PER_BUFFER]);
+    debug_assert!(BYTES_PER_BUFFER >= std::mem::size_of::<u64>());
+    const TMP_OFFSET: usize = BYTES_PER_BUFFER - std::mem::size_of::<u64>();
+    debug_assert!(
+      (TMP_OFFSET..BYTES_PER_BUFFER).contains(&(start_offset as usize)),
+      "{TMP_OFFSET}..={BYTES_PER_BUFFER} does not contain {start_offset}"
+    );
 
-    let mut temp_storage = TempStorage([0; Cache::BYTES_PER_BUFFER]);
-    let temp_storage_ptr = temp_storage.0.as_mut_ptr() as *mut u8;
-    self.cache.aligned_store(temp_storage_ptr);
+    let mut temp_storage = [0u64; 2];
+    temp_storage[0] = unsafe { *(self.buffer.as_ptr().byte_add(TMP_OFFSET) as *const u64) };
 
     if self.newline_mask == 0 {
       self.refresh_buffer_for_trailing_temp();
-      self
-        .cache
-        .aligned_store(unsafe { temp_storage_ptr.add(Cache::BYTES_PER_BUFFER) });
+      temp_storage[1] = unsafe { *(self.buffer.as_ptr() as *const u64) };
     }
 
-    let encoding =
-      unsafe { read_unaligned(temp_storage_ptr.add(start_offset as usize) as *const u64) };
+    let encoding = unsafe {
+      read_unaligned(
+        temp_storage
+          .as_ptr()
+          .byte_add(start_offset as usize - TMP_OFFSET),
+      )
+    };
 
     TemperatureReading::from_encoding(encoding)
   }
