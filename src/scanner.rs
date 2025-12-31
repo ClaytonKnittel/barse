@@ -555,4 +555,28 @@ mod tests {
     );
     expect_that!(scanner.next(), none());
   }
+
+  #[gtest]
+  fn test_iter_from_midpoint_max_length_item() {
+    let buffer = AlignedBuffer {
+      buffer: *b"This is a city n\
+                 ame which has th\
+                 e most character\
+                 s!;-10.2\nThis ci\
+                 ty ain't so bad \
+                 either;2.3\n\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+                 \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    };
+
+    let mut scanner = Scanner::from_midpoint(&buffer.buffer);
+    expect_that!(
+      scanner.next(),
+      some((
+        eq("This city ain't so bad either"),
+        eq(TemperatureReading::new(23))
+      ))
+    );
+    expect_that!(scanner.next(), none());
+  }
 }
