@@ -1,4 +1,5 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![deny(clippy::borrow_as_ptr)]
 
 pub mod barse;
 pub mod error;
