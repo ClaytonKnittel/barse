@@ -100,11 +100,20 @@ impl<'a> Scanner<'a> {
     self.newline_mask = newline_mask;
   }
 
+  /// In mutlithreading mode, the end of our buffer may not be the end of the
+  /// entire file, so we can't assume there will be a newline following the
+  /// last semicolon. Therefore, we must always check that we haven't reached
+  /// the end of the buffer when reading in more data.
   #[must_use]
   #[cfg(feature = "multithreaded")]
   fn read_next_assuming_available_if_single_thread(&mut self) -> bool {
     self.read_next()
   }
+  /// In single threaded mode, the end of the buffer is the end of the file, so
+  /// we can assume there is a newline following every semicolon. If the
+  /// current buffer has a semicolon near the end but no newline following, we
+  /// know there must be at least one more buffer's worth of contents
+  /// remaining. Otherwise the file format would be invalid.
   #[must_use]
   #[cfg(not(feature = "multithreaded"))]
   fn read_next_assuming_available_if_single_thread(&mut self) -> bool {
