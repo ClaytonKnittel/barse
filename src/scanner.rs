@@ -186,22 +186,9 @@ impl<'a> Scanner<'a> {
       self.cur_offset = 0;
     }
 
-    let prev_buffer = unsafe {
-      std::slice::from_raw_parts(
-        self.buffer.as_ptr().byte_sub(BYTES_PER_BUFFER),
-        2 * BYTES_PER_BUFFER,
-      )
-    };
-
     debug_assert!(
       !station_name.contains('\n'),
-      "Station name invalid: \"{station_name}\": [{:?}; {}], ; {:016x}, \\n {:016x}, {}: [{}]",
-      self.buffer.as_ptr(),
-      self.buffer.len(),
-      self.semicolon_mask,
-      self.newline_mask,
-      self.cur_offset,
-      str::from_utf8(prev_buffer).unwrap()
+      "Station name invalid: \"{station_name}\""
     );
     Some(station_name)
   }
