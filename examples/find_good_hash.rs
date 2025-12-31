@@ -8,7 +8,12 @@ use std::{
 
 use barse::error::{BarseError, BarseResult};
 use itertools::Itertools;
-use rand::{rng, seq::IteratorRandom};
+use rand::{
+  distr::{Distribution, Uniform},
+  rng,
+  seq::IteratorRandom,
+  Rng, RngCore,
+};
 
 const TABLE_SHIFT: u32 = 15;
 const TABLE_SIZE: usize = 1 << TABLE_SHIFT;
@@ -61,7 +66,7 @@ fn scramble_u64(v: u64, p: u64) -> u64 {
   v.wrapping_mul(p) >> (64 - TABLE_SHIFT)
 }
 
-fn new_hash(bytes: &str, p: u64) -> u64 {
+fn new_hash(bytes: &str, p: &[u64; 4]) -> u64 {
   let mut local_hash = [0u64; 4];
   for (dst, chunk) in local_hash
     .iter_mut()
@@ -75,10 +80,43 @@ fn new_hash(bytes: &str, p: u64) -> u64 {
       }
     }
   }
-  for hash in &mut local_hash {
-    *hash = scramble_u64(*hash, p);
+  for (hash, p) in local_hash.iter_mut().zip(p) {
+    *hash = scramble_u64(*hash, *p);
   }
   local_hash[0] ^ local_hash[1] ^ local_hash[2] ^ local_hash[3]
+}
+
+fn ncr(n: u32, r: u32) -> u64 {
+  debug_assert!(r <= n);
+  (1..=n as u64).rev().take(r as usize).product() / (1..=r)
+}
+
+fn rand_u64_with_n_bits<R: Rng>(bits: u32, rng: &mut R) -> u64 {
+  let distr = Uniform::new(0, ncr(64, bits)).unwrap();
+  let mut sample = distr.sample(rng);
+
+  println!("Chose {} from range 0..{}", sample, ncr(64, bits));
+
+  let mut res = 0u64;
+  let mut b = bits;
+  for bit in (0..64).rev() {
+    let ways = ncr(bit, b);
+    println!("Bit {bit}: {ways} ways, sample {sample} and b {b}");
+    if ways <= sample {
+      sample -= ways;
+      b -= 1;
+      res += 1 << bit;
+
+      if b == 0 {
+        break;
+      }
+    }
+  }
+  debug_assert_eq!(sample, 0);
+  debug_assert_eq!(b, 0);
+  debug_assert_eq!(res.count_ones(), bits);
+
+  res
 }
 
 fn run() -> BarseResult {
@@ -91,72 +129,25 @@ fn run() -> BarseResult {
       && (magic & (magic >> 4)) == 0
       && (magic & (magic >> 5)) == 0
   }
+  let mut rng = rng();
 
+  const BITS: u32 = 8;
   let mut best_quality = f32::MAX;
-  for p in (0..64)
-    .tuple_combinations()
-    .map(|(b1, b2, b3, b4)| (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4))
-    .filter(|p| nicely_spread(*p))
-  {
-    let hash_fn = |bytes: &String| new_hash(bytes, p);
+  loop {
+    let p = [
+      rand_u64_with_n_bits(BITS, &mut rng),
+      rand_u64_with_n_bits(BITS, &mut rng),
+      rand_u64_with_n_bits(BITS, &mut rng),
+      rand_u64_with_n_bits(BITS, &mut rng),
+    ];
+    let hash_fn = |bytes: &String| new_hash(bytes, &p);
     let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
     if quality < best_quality {
       best_quality = quality;
-      println!("Quality {quality} for {p:08x}");
-    }
-  }
-  for p in (0..64)
-    .tuple_combinations()
-    .map(|(b1, b2, b3, b4, b5)| (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4) | (1 << b5))
-    .filter(|p| nicely_spread(*p))
-  {
-    let hash_fn = |bytes: &String| new_hash(bytes, p);
-    let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
-    if quality < best_quality {
-      best_quality = quality;
-      println!("Quality {quality} for {p:08x}");
-    }
-  }
-  for p in (0..64)
-    .tuple_combinations()
-    .map(|(b1, b2, b3, b4, b5, b6)| {
-      (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4) | (1 << b5) | (1 << b6)
-    })
-    .filter(|p| nicely_spread(*p))
-  {
-    let hash_fn = |bytes: &String| new_hash(bytes, p);
-    let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
-    if quality < best_quality {
-      best_quality = quality;
-      println!("Quality {quality} for {p:08x}");
-    }
-  }
-  for p in (0..64)
-    .tuple_combinations()
-    .map(|(b1, b2, b3, b4, b5, b6, b7)| {
-      (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4) | (1 << b5) | (1 << b6) | (1 << b7)
-    })
-    .filter(|p| nicely_spread(*p))
-  {
-    let hash_fn = |bytes: &String| new_hash(bytes, p);
-    let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
-    if quality < best_quality {
-      best_quality = quality;
-      println!("Quality {quality} for {p:08x}");
-    }
-  }
-  for p in (0..64)
-    .tuple_combinations()
-    .map(|(b1, b2, b3, b4, b5, b6, b7, b8)| {
-      (1 << b1) | (1 << b2) | (1 << b3) | (1 << b4) | (1 << b5) | (1 << b6) | (1 << b7) | (1 << b8)
-    })
-    .filter(|p| nicely_spread(*p))
-  {
-    let hash_fn = |bytes: &String| new_hash(bytes, p);
-    let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
-    if quality < best_quality {
-      best_quality = quality;
-      println!("Quality {quality} for {p:08x}");
+      println!("Quality {quality} for {p:08x?}");
+      if quality < 1.04 {
+        break;
+      }
     }
   }
 
