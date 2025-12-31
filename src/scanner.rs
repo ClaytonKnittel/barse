@@ -84,8 +84,12 @@ impl<'a> Scanner<'a> {
     }
   }
 
+  /// Constructs a scanner that begins iterating at a point immediately
+  /// proceeding a scanner iterating over the previous slice from the file,
+  /// assuming the first `BUFFER_OVERLAP` bytes are overlapping with the
+  /// previous slice.
   pub fn from_midpoint<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len() > BUFFER_OVERLAP);
+    debug_assert!(buffer.len() >= BUFFER_OVERLAP);
     debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
     let (buffer, semicolon_mask, newline_mask, cur_offset) =
       Self::find_starting_point_in_overlap(buffer);
