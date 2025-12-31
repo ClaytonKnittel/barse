@@ -8,10 +8,8 @@ use crate::build_table::build_temperature_reading_table_from_bytes;
 use crate::build_table_mt::build_temperature_reading_table_from_bytes;
 
 use crate::{
-  error::BarseResult,
-  scanner::SCANNER_CACHE_SIZE,
-  str_hash::TABLE_SIZE,
-  table::{TemperatureSummary, WeatherStationTable},
+  error::BarseResult, scanner::SCANNER_CACHE_SIZE, str_hash::TABLE_SIZE,
+  table::WeatherStationTable, temp_summary::TemperatureSummary,
 };
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
