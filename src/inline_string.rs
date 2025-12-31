@@ -29,6 +29,17 @@ impl InlineString {
     self.len as usize
   }
 
+  /// Performs a memcpy from contents to self.value() without calling
+  /// libc::memcpy.
+  fn memcpy_no_libc(&mut self, contents: &str) {
+    for i in 0..contents.len().min(MAX_STRING_LEN) {
+      unsafe {
+        *self.bytes.get_unchecked_mut(i) =
+          std::hint::black_box(*contents.as_bytes().get_unchecked(i));
+      }
+    }
+  }
+
   pub fn initialize(&mut self, contents: &str) {
     debug_assert!(
       contents.len() <= MAX_STRING_LEN,
@@ -37,7 +48,7 @@ impl InlineString {
       MAX_STRING_LEN
     );
     // TODO: see if I can avoid the memcpy call
-    unsafe { self.bytes.get_unchecked_mut(..contents.len()) }.copy_from_slice(contents.as_bytes());
+    self.memcpy_no_libc(contents);
     self.len = contents.len() as u32;
   }
 
@@ -45,7 +56,7 @@ impl InlineString {
     unsafe { str::from_utf8_unchecked(self.value()) }
   }
 
-  fn value(&self) -> &[u8] {
+  pub fn value(&self) -> &[u8] {
     unsafe { self.bytes.get_unchecked(..self.len as usize) }
   }
 
