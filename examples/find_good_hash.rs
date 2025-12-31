@@ -50,29 +50,24 @@ fn weather_stations(path: &str) -> BarseResult<Vec<String>> {
   )
 }
 
-fn mask_char_and_above<const NEEDLE: u8>(v: u128) -> u128 {
-  const LSB: u128 = 0x0101_0101_0101_0101_0101_0101_0101_0101;
-  let search_mask = (NEEDLE as u128) * LSB;
-  let zeroed_needles = v ^ search_mask;
-  let lsb_one_for_zeros = ((!zeroed_needles & zeroed_needles.wrapping_sub(LSB)) >> 7) & LSB;
-  let keep_mask = lsb_one_for_zeros.wrapping_sub(1) & !lsb_one_for_zeros;
-  v & keep_mask
+fn mask_above(v: u128, len: usize) -> u128 {
+  v & 1u128.unbounded_shl(8 * len.min(16) as u32).wrapping_sub(1)
 }
 
 fn scramble_u64(v: u64, p: u64) -> u64 {
-  v.wrapping_mul(p) >> 48
+  v.wrapping_mul(p) >> 44
 }
 
 fn new_hash(bytes: &str, p: u64) -> u64 {
   let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
-  let v = mask_char_and_above::<b';'>(v);
+  let v = mask_above(v, bytes.len());
   let v = v as u64 ^ (v >> 64) as u64;
   scramble_u64(v, p) as u64
 }
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const CAP: usize = 65536;
+  const CAP: usize = 1048576;
 
   let mut best_quality = f32::MAX;
   for (b1, b2, b3, b4) in (0..64).tuple_combinations() {

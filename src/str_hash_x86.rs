@@ -3,7 +3,10 @@ use std::arch::x86_64::{
   _mm_xor_si128,
 };
 
-use crate::util::{unaligned_read_would_cross_page_boundary, unlikely};
+use crate::{
+  str_hash::HASH_BITS,
+  util::{unaligned_read_would_cross_page_boundary, unlikely},
+};
 
 fn read_str_to_m128_slow(s: &[u8]) -> __m128i {
   #[repr(align(16))]
@@ -42,8 +45,8 @@ fn compress_m128_to_u64(v: __m128i) -> u64 {
 }
 
 fn scramble_u64(v: u64) -> u64 {
-  const MAGIC: u64 = 0x20000400020001;
-  v.wrapping_mul(MAGIC) >> 48
+  const MAGIC: u64 = 0x800400001001;
+  v.wrapping_mul(MAGIC) >> (64 - HASH_BITS)
 }
 
 pub fn str_hash_fast(bytes: &[u8]) -> u64 {

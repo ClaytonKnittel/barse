@@ -5,10 +5,9 @@ use memmap2::{Advice, MmapOptions};
 use crate::{
   error::BarseResult,
   scanner::{Scanner, SCANNER_CACHE_SIZE},
+  str_hash::TABLE_SIZE,
   table::{TemperatureSummary, WeatherStationTable},
 };
-
-const TABLE_SIZE: usize = 65536;
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
   unsafe {
