@@ -32,10 +32,9 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
   }
 
   pub fn merge(&mut self, other: Self) {
-    for i in 0..SIZE {
-      let dst = self.entry_at_mut(i);
-      let src = other.entry_at(i);
-      dst.merge(src);
+    for (station, summary) in other.iter() {
+      let entry = self.find_entry(station);
+      entry.merge_summary(summary);
     }
   }
 
