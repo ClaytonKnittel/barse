@@ -3,7 +3,6 @@ use crate::{
   str_hash::TABLE_SIZE,
   table::WeatherStationTable,
 };
-use itertools::Itertools;
 use std::sync::Arc;
 
 pub fn build_temperature_reading_table_from_bytes(
@@ -15,24 +14,33 @@ pub fn build_temperature_reading_table_from_bytes(
 
   let slicer = Arc::new(unsafe { crate::slicer::Slicer::new(input) });
 
-  let threads = (0..thread_count)
-    .map(|_| {
+  let mut threads = (0..thread_count)
+    .map(|_| -> BarseResult<_> {
       let slicer = slicer.clone();
-      std::thread::spawn(move || {
+      let mut map = WeatherStationTable::<TABLE_SIZE>::new()?;
+      Ok(std::thread::spawn(move || {
         while let Some(slice) = slicer.next_slice() {
           for (station, temp) in slice {
-            //
+            map.add_reading(station, temp);
           }
         }
-      })
+        map
+      }))
     })
-    .collect_vec();
+    .collect::<Result<Vec<_>, _>>()?;
+
+  let mut map = threads
+    .pop()
+    .expect("Thread list will not be empty")
+    .join()
+    .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
 
   for thread in threads {
-    thread
+    let thread_map = thread
       .join()
       .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
+    map.merge(thread_map);
   }
 
-  todo!();
+  Ok(map)
 }

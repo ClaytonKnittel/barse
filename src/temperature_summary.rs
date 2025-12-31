@@ -16,6 +16,13 @@ impl TemperatureSummary {
     debug_assert_eq!(self.count, 0);
   }
 
+  pub fn merge(&mut self, other: &Self) {
+    self.min = self.min.min(other.min);
+    self.max = self.max.max(other.max);
+    self.total += other.total;
+    self.count += other.count;
+  }
+
   pub fn min(&self) -> TemperatureReading {
     self.min
   }

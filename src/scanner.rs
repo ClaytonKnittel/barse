@@ -80,7 +80,7 @@ impl<'a> Scanner<'a> {
   }
 
   pub fn from_midpoint<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len() >= BUFFER_OVERLAP);
+    debug_assert!(buffer.len() > BUFFER_OVERLAP);
     debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
     let (buffer, semicolon_mask, newline_mask, cur_offset) =
       Self::find_starting_point_in_overlap(buffer);
@@ -107,6 +107,19 @@ impl<'a> Scanner<'a> {
     self.newline_mask = newline_mask;
   }
 
+  #[must_use]
+  #[cfg(feature = "multithreaded")]
+  fn read_next_assuming_available_if_single_thread(&mut self) -> bool {
+    self.read_next()
+  }
+  #[must_use]
+  #[cfg(not(feature = "multithreaded"))]
+  fn read_next_assuming_available_if_single_thread(&mut self) -> bool {
+    self.read_next_assuming_available();
+    true
+  }
+
+  #[must_use]
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
     if self.buffer.len() == BYTES_PER_BUFFER {
@@ -121,6 +134,7 @@ impl<'a> Scanner<'a> {
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
+  #[must_use]
   fn find_next_semicolon(&mut self) -> bool {
     if self.semicolon_mask != 0 {
       return true;
@@ -173,23 +187,29 @@ impl<'a> Scanner<'a> {
 
     self.cur_offset = semicolon_offset + 1;
     if semicolon_offset == BYTES_PER_BUFFER as u32 - 1 {
-      self.read_next_assuming_available();
+      if !self.read_next_assuming_available_if_single_thread() {
+        return None;
+      }
       self.cur_offset = 0;
     }
 
     Some(station_name)
   }
 
-  fn refresh_buffer_for_trailing_temp(&mut self) {
-    self.read_next_assuming_available();
+  #[must_use]
+  fn refresh_buffer_for_trailing_temp(&mut self) -> bool {
+    if !self.read_next_assuming_available_if_single_thread() {
+      return false;
+    }
 
     debug_assert!(self.newline_mask != 0);
     let newline_offset = self.newline_mask.trailing_zeros();
     self.cur_offset = newline_offset + 1;
     debug_assert!(self.cur_offset < BYTES_PER_BUFFER as u32);
+    true
   }
 
-  fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> TemperatureReading {
+  fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> Option<TemperatureReading> {
     debug_assert!(BYTES_PER_BUFFER >= std::mem::size_of::<u64>());
     const TMP_OFFSET: usize = BYTES_PER_BUFFER - std::mem::size_of::<u64>();
     debug_assert!(
@@ -201,7 +221,9 @@ impl<'a> Scanner<'a> {
     temp_storage[0] = unsafe { *(self.buffer.as_ptr().byte_add(TMP_OFFSET) as *const u64) };
 
     if self.newline_mask == 0 {
-      self.refresh_buffer_for_trailing_temp();
+      if !self.refresh_buffer_for_trailing_temp() {
+        return None;
+      }
       temp_storage[1] = unsafe { *(self.buffer.as_ptr() as *const u64) };
     }
 
@@ -213,20 +235,20 @@ impl<'a> Scanner<'a> {
       )
     };
 
-    TemperatureReading::from_encoding(encoding)
+    Some(TemperatureReading::from_encoding(encoding))
   }
 
-  fn find_next_temp_reading(&mut self) -> TemperatureReading {
+  fn find_next_temp_reading(&mut self) -> Option<TemperatureReading> {
     let start_offset = self.cur_offset;
     let temp_start_ptr = self.offset_to_ptr(start_offset);
     let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
     // Slow path in case we are in danger of reading across a page boundary.
     let reading = if unlikely(unaligned_read_would_cross_page_boundary::<u64>(start_ptr)) {
-      self.parse_temp_from_copied_buffer(start_offset)
+      self.parse_temp_from_copied_buffer(start_offset)?
     } else {
-      if self.newline_mask == 0 {
-        self.refresh_buffer_for_trailing_temp();
+      if self.newline_mask == 0 && !self.refresh_buffer_for_trailing_temp() {
+        return None;
       }
 
       TemperatureReading::from_raw_ptr(temp_start_ptr)
@@ -235,7 +257,7 @@ impl<'a> Scanner<'a> {
     self.cur_offset = self.newline_mask.trailing_zeros() + 1;
     self.newline_mask &= self.newline_mask - 1;
 
-    reading
+    Some(reading)
   }
 }
 
@@ -244,7 +266,7 @@ impl<'a> Iterator for Scanner<'a> {
 
   fn next(&mut self) -> Option<Self::Item> {
     let station_name = self.find_next_station_name()?;
-    let temperature_reading = self.find_next_temp_reading();
+    let temperature_reading = self.find_next_temp_reading()?;
     Some((station_name, temperature_reading))
   }
 }

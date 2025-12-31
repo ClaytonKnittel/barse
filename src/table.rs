@@ -31,6 +31,14 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     }
   }
 
+  pub fn merge(&mut self, other: Self) {
+    for i in 0..SIZE {
+      let dst = self.entry_at_mut(i);
+      let src = other.entry_at(i);
+      dst.merge(src);
+    }
+  }
+
   fn elements_ptr(&self) -> *const Entry {
     self.buckets.as_ptr() as *const Entry
   }

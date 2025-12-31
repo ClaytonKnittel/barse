@@ -38,6 +38,13 @@ impl Entry {
     self.key.is_default()
   }
 
+  pub fn merge(&mut self, other: &Self) {
+    if self.is_default() {
+      self.key = other.key.clone();
+    }
+    self.temp_summary.merge(&other.temp_summary);
+  }
+
   pub fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
     (self.key.value_str(), &self.temp_summary)
   }
