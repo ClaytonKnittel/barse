@@ -56,3 +56,75 @@ impl Default for TemperatureSummary {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use googletest::prelude::*;
+
+  use crate::{temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary};
+
+  #[gtest]
+  fn test_merge_default() {
+    let mut s1 = TemperatureSummary {
+      min: TemperatureReading::new(-15),
+      max: TemperatureReading::new(20),
+      total: 50,
+      count: 5,
+    };
+    s1.merge(&TemperatureSummary::default());
+    expect_that!(
+      s1,
+      pat!(TemperatureSummary {
+        min: TemperatureReading::new(-15),
+        max: TemperatureReading::new(20),
+        total: 50,
+        count: 5,
+      })
+    );
+  }
+
+  #[gtest]
+  fn test_merge_default_lhs() {
+    let mut s1 = TemperatureSummary::default();
+    s1.merge(&TemperatureSummary {
+      min: TemperatureReading::new(-15),
+      max: TemperatureReading::new(20),
+      total: 50,
+      count: 5,
+    });
+    expect_that!(
+      s1,
+      pat!(TemperatureSummary {
+        min: TemperatureReading::new(-15),
+        max: TemperatureReading::new(20),
+        total: 50,
+        count: 5,
+      })
+    );
+  }
+
+  #[gtest]
+  fn test_merge() {
+    let mut s1 = TemperatureSummary {
+      min: TemperatureReading::new(-10),
+      max: TemperatureReading::new(25),
+      total: 40,
+      count: 4,
+    };
+    s1.merge(&TemperatureSummary {
+      min: TemperatureReading::new(-15),
+      max: TemperatureReading::new(20),
+      total: 50,
+      count: 5,
+    });
+    expect_that!(
+      s1,
+      pat!(TemperatureSummary {
+        min: TemperatureReading::new(-15),
+        max: TemperatureReading::new(25),
+        total: 90,
+        count: 9,
+      })
+    );
+  }
+}
