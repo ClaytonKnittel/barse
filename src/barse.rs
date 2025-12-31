@@ -8,7 +8,7 @@ use crate::{
   table::{TemperatureSummary, WeatherStationTable},
 };
 
-const TABLE_SIZE: usize = 262144;
+const TABLE_SIZE: usize = 524288;
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
   unsafe {

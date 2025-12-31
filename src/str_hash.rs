@@ -23,8 +23,8 @@ mod generic_hasher {
   }
 
   fn scramble_u64(v: u64) -> u64 {
-    const MAGIC: u64 = 0x8000040010001;
-    v.wrapping_mul(MAGIC) >> 46
+    const MAGIC: u64 = 0x400800200001;
+    v.wrapping_mul(MAGIC) >> 45
   }
 
   pub fn str_hash(bytes: &[u8]) -> u64 {

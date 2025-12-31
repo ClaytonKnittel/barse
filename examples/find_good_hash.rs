@@ -55,7 +55,7 @@ fn mask_above(v: u128, len: usize) -> u128 {
 }
 
 fn scramble_u64(v: u64, p: u64) -> u64 {
-  v.wrapping_mul(p) >> 46
+  v.wrapping_mul(p) >> 45
 }
 
 fn new_hash(bytes: &str, p: u64) -> u64 {
@@ -67,7 +67,7 @@ fn new_hash(bytes: &str, p: u64) -> u64 {
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const CAP: usize = 262144;
+  const CAP: usize = 524288;
 
   let mut best_quality = f32::MAX;
   for (b1, b2, b3, b4) in (0..64).tuple_combinations() {
