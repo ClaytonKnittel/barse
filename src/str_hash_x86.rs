@@ -4,7 +4,7 @@ use std::arch::x86_64::{
 };
 
 use crate::{
-  str_hash::HASH_BITS,
+  str_hash::{HASH_BITS, HASH_MAGIC},
   util::{unaligned_read_would_cross_page_boundary, unlikely},
 };
 
@@ -45,8 +45,7 @@ fn compress_m128_to_u64(v: __m128i) -> u64 {
 }
 
 fn scramble_u64(v: u64) -> u64 {
-  const MAGIC: u64 = 0x800400001001;
-  v.wrapping_mul(MAGIC) >> (64 - HASH_BITS)
+  v.wrapping_mul(HASH_MAGIC) >> (64 - HASH_BITS)
 }
 
 pub fn str_hash_fast(bytes: &[u8]) -> u64 {
