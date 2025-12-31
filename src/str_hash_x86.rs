@@ -42,8 +42,8 @@ fn compress_m128_to_u64(v: __m128i) -> u64 {
 }
 
 fn scramble_u64(v: u64) -> u64 {
-  const MAGIC: u64 = 0x400800200001;
-  v.wrapping_mul(MAGIC) >> 45
+  const MAGIC: u64 = 0x800400001001;
+  v.wrapping_mul(MAGIC) >> 44
 }
 
 pub fn str_hash_fast(bytes: &[u8]) -> u64 {
