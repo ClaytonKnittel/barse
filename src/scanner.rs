@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[cfg(not(target_feature = "avx2"))]
-use crate::scanner_cache::Cache;
+use crate::scanner_cache::{read_next_from_buffer, BYTES_PER_BUFFER};
 #[cfg(target_feature = "avx2")]
 use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BUFFER};
 
