@@ -8,10 +8,9 @@ use std::sync::Arc;
 pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
 ) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
-  // let thread_count = std::thread::available_parallelism()
-  //   .map(|nonzero| nonzero.get())
-  //   .unwrap_or(1);
-  let thread_count = 1;
+  let thread_count = std::thread::available_parallelism()
+    .map(|nonzero| nonzero.get())
+    .unwrap_or(1);
 
   let slicer = Arc::new(unsafe { crate::slicer::Slicer::new(input) });
 
