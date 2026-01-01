@@ -1,11 +1,20 @@
 use std::{borrow::Borrow, cmp::Ordering, fmt::Display};
 
+use crate::hugepage_backed_table::InPlaceInitializable;
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
 
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
+
+pub enum InlineStringState {
+  Empty,
+  Initialized,
+  Initializing,
+}
+
+const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
 
 #[derive(Clone)]
 #[repr(C, align(8))]
@@ -117,6 +126,14 @@ impl Borrow<[u8]> for InlineString {
 impl Display for InlineString {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.value_str())
+  }
+}
+
+impl InPlaceInitializable for InlineString {
+  fn initialize(&mut self) {
+    // No need to do anything, a zero-initialized string is correctly initialized.
+    debug_assert!(self.bytes.iter().all(|b| *b == 0));
+    debug_assert_eq!(self.len, 0);
   }
 }
 
