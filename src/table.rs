@@ -1,9 +1,13 @@
 use std::fmt::Debug;
 
 use crate::{
-  error::BarseResult, hugepage_backed_table::HugepageBackedTable, str_hash::str_hash,
-  table_entry::Entry, temperature_reading::TemperatureReading,
-  temperature_summary::TemperatureSummary, util::likely,
+  error::BarseResult,
+  hugepage_backed_table::HugepageBackedTable,
+  str_hash::str_hash,
+  table_entry::Entry,
+  temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary,
+  util::{likely, HasIter},
 };
 
 pub struct WeatherStationTable<const SIZE: usize> {
@@ -15,13 +19,6 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     Ok(Self {
       table: HugepageBackedTable::new()?,
     })
-  }
-
-  pub fn iter(&self) -> impl Iterator<Item = (&str, &TemperatureSummary)> {
-    WeatherStationIterator {
-      table: self,
-      index: 0,
-    }
   }
 
   pub fn merge(&mut self, other: Self) {
@@ -71,6 +68,17 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
   }
 }
 
+impl<'a, const SIZE: usize> HasIter<'a> for WeatherStationTable<SIZE> {
+  type Item = (&'a str, &'a TemperatureSummary);
+
+  fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
+    WeatherStationIterator {
+      table: self,
+      index: 0,
+    }
+  }
+}
+
 impl<const SIZE: usize> Debug for WeatherStationTable<SIZE> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "")
@@ -105,6 +113,7 @@ mod tests {
   use crate::{
     table::{TemperatureSummary, WeatherStationTable},
     temperature_reading::TemperatureReading,
+    util::HasIter,
   };
 
   fn new_table<const SIZE: usize>() -> WeatherStationTable<SIZE> {
