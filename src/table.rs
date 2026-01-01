@@ -3,8 +3,12 @@ use std::fmt::Debug;
 use memmap2::{MmapMut, MmapOptions};
 
 use crate::{
-  error::BarseResult, str_hash::str_hash, table_entry::Entry,
-  temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary, util::likely,
+  error::BarseResult,
+  str_hash::str_hash,
+  table_entry::Entry,
+  temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary,
+  util::{likely, HUGEPAGE_SIZE},
 };
 
 pub struct WeatherStationTable<const SIZE: usize> {
@@ -13,7 +17,7 @@ pub struct WeatherStationTable<const SIZE: usize> {
 
 impl<const SIZE: usize> WeatherStationTable<SIZE> {
   pub fn new() -> BarseResult<Self> {
-    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(2 * 1024 * 1024);
+    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(HUGEPAGE_SIZE);
     let buckets = MmapOptions::new().len(size).map_anon()?;
     buckets.advise(memmap2::Advice::HugePage)?;
 

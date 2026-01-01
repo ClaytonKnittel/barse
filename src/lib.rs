@@ -21,6 +21,8 @@ mod str_cmp_x86;
 pub mod str_hash;
 #[cfg(target_feature = "avx2")]
 pub mod str_hash_x86;
+#[cfg(feature = "multithreaded")]
+mod string_table;
 pub mod table;
 mod table_entry;
 pub mod temperature_reading;
