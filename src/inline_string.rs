@@ -9,9 +9,9 @@ use crate::str_cmp_x86::inline_str_eq_foreign_str;
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
-const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
 
 #[repr(C, align(8))]
+#[cfg_attr(not(feature = "multithreaded"), derive(Clone))]
 pub struct InlineString {
   bytes: [u8; STRING_STORAGE_LEN],
   #[cfg(feature = "multithreaded")]
@@ -51,6 +51,8 @@ impl InlineString {
 
 #[cfg(feature = "multithreaded")]
 impl InlineString {
+  const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
+
   #[cfg(test)]
   pub fn new(contents: &str) -> Self {
     let s = Self::default();
@@ -69,11 +71,11 @@ impl InlineString {
 
   pub fn initialized(&self) -> bool {
     let len = self.len.load(AtomicOrdering::Acquire);
-    len != 0 && len != INITIALIZING_RESERVED_LEN
+    len != 0 && len != Self::INITIALIZING_RESERVED_LEN
   }
 
   fn memcpy_no_libc_under_lock(&self, contents: &str) {
-    debug_assert_eq!(self.len() as u32, INITIALIZING_RESERVED_LEN);
+    debug_assert_eq!(self.len() as u32, Self::INITIALIZING_RESERVED_LEN);
     let mut_self = unsafe { &mut *(self as *const Self as *mut Self) };
     mut_self.memcpy_no_libc(contents);
   }
