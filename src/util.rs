@@ -28,7 +28,7 @@ pub fn unaligned_read_would_cross_page_boundary<T>(start_ptr: *const u8) -> bool
 }
 
 pub trait HasIter<'a> {
-  type Item;
+  type Item: 'a;
 
   fn iter(&'a self) -> impl Iterator<Item = Self::Item>;
 }
