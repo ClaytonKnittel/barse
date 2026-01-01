@@ -7,7 +7,6 @@ use std::{
 };
 
 use barse::error::{BarseError, BarseResult};
-use itertools::Itertools;
 use rand::{
   distr::{Distribution, Uniform},
   rng,
@@ -66,11 +65,16 @@ fn scramble_u64(v: u64, p: u64) -> u64 {
   v.wrapping_mul(p) >> (64 - TABLE_SHIFT)
 }
 
-fn new_hash(bytes: &str, p: &[u64; 4]) -> u64 {
+fn wymix(a: u64, b: u64) -> u64 {
+  let r = (a as u128) * (b as u128);
+  return (r as u64) ^ (r >> 64) as u64;
+}
+
+fn wyhash32(bytes: &[u8], seed: u64) -> u64 {
   let mut local_hash = [0u64; 4];
   for (dst, chunk) in local_hash
     .iter_mut()
-    .zip(bytes.as_bytes().chunks(std::mem::size_of::<u64>()))
+    .zip(bytes.chunks(std::mem::size_of::<u64>()))
   {
     if chunk.len() == 8 {
       *dst = u64::from_ne_bytes(chunk.try_into().unwrap());
@@ -80,28 +84,62 @@ fn new_hash(bytes: &str, p: &[u64; 4]) -> u64 {
       }
     }
   }
-  for (hash, p) in local_hash.iter_mut().zip(p) {
-    *hash = scramble_u64(*hash, *p);
+
+  let a = local_hash[0];
+  let b = local_hash[1];
+  let c = local_hash[2];
+  let d = local_hash[3];
+
+  let mut h = seed;
+  h = wymix(h ^ a, 0x60bee2bee120fc15);
+  h = wymix(h ^ b, 0xa3b195354a39b70d);
+  h = wymix(h ^ c, 0x1b03738712fad5c9);
+  wymix(h ^ d, 0x9e3779b97f4a7c15)
+}
+
+fn new_hash(bytes: &str, p: &[[u64; 2]; 4]) -> u64 {
+  let mut local_hash = [0u64; 4];
+  let mut add = p[0][1];
+  for ((dst, chunk), &[mul, _]) in local_hash
+    .iter_mut()
+    .zip(bytes.as_bytes().chunks(std::mem::size_of::<u64>()))
+    .zip(p)
+  {
+    if chunk.len() == 8 {
+      *dst = u64::from_ne_bytes(chunk.try_into().unwrap());
+    } else {
+      for (i, c) in chunk.iter().enumerate() {
+        *dst += (*c as u64) << (8 * i);
+      }
+    }
+    // for i in 0..chunk.len() {
+    //   let byte = (*dst >> (8 * i)) & 0xff;
+    //   let byte = ((byte + (add >> (8 * i))) & 0xff) << (8 * i);
+    //   let mask = 0xff << (8 * i);
+    //   *dst = (*dst & !mask) + byte;
+    // }
+    *dst = scramble_u64(dst.wrapping_add(add), mul);
+    add = *dst;
   }
   local_hash[0] ^ local_hash[1] ^ local_hash[2] ^ local_hash[3]
 }
 
 fn ncr(n: u32, r: u32) -> u64 {
-  debug_assert!(r <= n);
-  (1..=n as u64).rev().take(r as usize).product() / (1..=r)
+  if n < r {
+    0
+  } else {
+    (1..=n as u64).rev().take(r as usize).product::<u64>() / (1..=r as u64).product::<u64>()
+  }
 }
 
 fn rand_u64_with_n_bits<R: Rng>(bits: u32, rng: &mut R) -> u64 {
   let distr = Uniform::new(0, ncr(64, bits)).unwrap();
   let mut sample = distr.sample(rng);
 
-  println!("Chose {} from range 0..{}", sample, ncr(64, bits));
-
   let mut res = 0u64;
   let mut b = bits;
   for bit in (0..64).rev() {
     let ways = ncr(bit, b);
-    println!("Bit {bit}: {ways} ways, sample {sample} and b {b}");
     if ways <= sample {
       sample -= ways;
       b -= 1;
@@ -131,16 +169,20 @@ fn run() -> BarseResult {
   }
   let mut rng = rng();
 
-  const BITS: u32 = 8;
+  const BITS: u32 = 10;
   let mut best_quality = f32::MAX;
   loop {
-    let p = [
-      rand_u64_with_n_bits(BITS, &mut rng),
-      rand_u64_with_n_bits(BITS, &mut rng),
-      rand_u64_with_n_bits(BITS, &mut rng),
-      rand_u64_with_n_bits(BITS, &mut rng),
-    ];
-    let hash_fn = |bytes: &String| new_hash(bytes, &p);
+    // let p = [
+    //   [rand_u64_with_n_bits(BITS, &mut rng), rng.next_u64()],
+    //   [rand_u64_with_n_bits(BITS, &mut rng), rng.next_u64()],
+    //   [rand_u64_with_n_bits(BITS, &mut rng), rng.next_u64()],
+    //   [rand_u64_with_n_bits(BITS, &mut rng), rng.next_u64()],
+    // ];
+    let p = rng.next_u64();
+    // let p = rand_u64_with_n_bits(BITS, &mut rng);
+    // let p = [p, p, p, p];
+    // let hash_fn = |bytes: &String| new_hash(bytes, &p);
+    let hash_fn = |bytes: &String| wyhash32(bytes.as_bytes(), p);
     let quality = compute_hash_quality(&weather_stations, hash_fn, TABLE_SIZE);
     if quality < best_quality {
       best_quality = quality;
