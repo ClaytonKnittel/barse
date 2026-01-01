@@ -1,6 +1,6 @@
 use crate::{
-  inline_string::InlineString, temperature_reading::TemperatureReading,
-  temperature_summary::TemperatureSummary, util::likely,
+  hugepage_backed_table::InPlaceInitializable, inline_string::InlineString,
+  temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary, util::likely,
 };
 
 #[derive(Default, Clone)]
@@ -10,11 +10,7 @@ pub struct Entry {
 }
 
 impl Entry {
-  pub fn initialize_to_default(&mut self) {
-    self.temp_summary.initialize();
-  }
-
-  fn initialize(&mut self, station: &str) {
+  fn initialize_key(&mut self, station: &str) {
     self.key.initialize(station);
   }
 
@@ -27,7 +23,7 @@ impl Entry {
     if likely(self.key.eq_foreign_str(station)) {
       true
     } else if self.is_default() {
-      self.initialize(station);
+      self.initialize_key(station);
       true
     } else {
       false
@@ -44,5 +40,11 @@ impl Entry {
 
   pub fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
     (self.key.value_str(), &self.temp_summary)
+  }
+}
+
+impl InPlaceInitializable for Entry {
+  fn initialize(&mut self) {
+    self.temp_summary.initialize();
   }
 }

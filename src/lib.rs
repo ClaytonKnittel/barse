@@ -7,6 +7,7 @@ mod build_table;
 #[cfg(feature = "multithreaded")]
 mod build_table_mt;
 pub mod error;
+mod hugepage_backed_table;
 pub mod inline_string;
 pub mod print_summary;
 pub mod scanner;
