@@ -30,6 +30,8 @@ pub mod table;
 mod table_entry;
 pub mod temperature_reading;
 mod temperature_summary;
+#[cfg(feature = "multithreaded")]
+mod temperature_summary_table;
 #[cfg(test)]
 pub mod test_against_simple_parser;
 #[cfg(test)]
