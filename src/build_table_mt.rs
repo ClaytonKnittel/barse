@@ -1,13 +1,14 @@
 use crate::{
   error::{BarseError, BarseResult},
   str_hash::TABLE_SIZE,
-  table::WeatherStationTable,
+  temperature_summary::TemperatureSummary,
+  util::HasIter,
 };
 use std::sync::Arc;
 
 pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
-) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
+) -> BarseResult<impl for<'a> HasIter<'a, Item = (&'a str, &'a TemperatureSummary)>> {
   let thread_count = std::thread::available_parallelism()
     .map(|nonzero| nonzero.get())
     .unwrap_or(1);

@@ -24,7 +24,9 @@ pub mod str_hash;
 pub mod str_hash_x86;
 #[cfg(feature = "multithreaded")]
 mod string_table;
+#[cfg(not(feature = "multithreaded"))]
 pub mod table;
+#[cfg(not(feature = "multithreaded"))]
 mod table_entry;
 pub mod temperature_reading;
 mod temperature_summary;

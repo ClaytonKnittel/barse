@@ -9,13 +9,6 @@ use crate::str_cmp_x86::inline_str_eq_foreign_str;
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
-
-pub enum InlineStringState {
-  Empty,
-  Initialized,
-  Initializing,
-}
-
 const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
 
 #[repr(C, align(8))]
@@ -28,12 +21,6 @@ pub struct InlineString {
 }
 
 impl InlineString {
-  pub fn new(contents: &str) -> Self {
-    let mut s = Self::default();
-    s.initialize(contents);
-    s
-  }
-
   pub fn is_empty(&self) -> bool {
     self.len() == 0
   }
@@ -64,6 +51,14 @@ impl InlineString {
 
 #[cfg(feature = "multithreaded")]
 impl InlineString {
+  #[cfg(test)]
+  pub fn new(contents: &str) -> Self {
+    let s = Self::default();
+    let initialized = s.try_initialize(contents);
+    debug_assert!(initialized);
+    s
+  }
+
   pub fn len(&self) -> usize {
     self.len.load(AtomicOrdering::Relaxed) as usize
   }
@@ -110,6 +105,13 @@ impl InlineString {
 
 #[cfg(not(feature = "multithreaded"))]
 impl InlineString {
+  #[cfg(test)]
+  pub fn new(contents: &str) -> Self {
+    let mut s = Self::default();
+    s.initialize(contents);
+    s
+  }
+
   pub fn len(&self) -> usize {
     self.len as usize
   }
