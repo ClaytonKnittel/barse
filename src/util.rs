@@ -1,5 +1,3 @@
-pub const HUGEPAGE_SIZE: usize = 2 * 1024 * 1024;
-
 #[inline(always)]
 #[cold]
 fn cold_path() {}

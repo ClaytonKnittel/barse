@@ -1,31 +1,20 @@
 use std::fmt::Debug;
 
-use memmap2::{MmapMut, MmapOptions};
-
 use crate::{
-  error::BarseResult,
-  str_hash::str_hash,
-  table_entry::Entry,
-  temperature_reading::TemperatureReading,
-  temperature_summary::TemperatureSummary,
-  util::{likely, HUGEPAGE_SIZE},
+  error::BarseResult, hugepage_backed_table::HugepageBackedTable, str_hash::str_hash,
+  table_entry::Entry, temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary, util::likely,
 };
 
 pub struct WeatherStationTable<const SIZE: usize> {
-  buckets: MmapMut,
+  table: HugepageBackedTable<Entry, SIZE>,
 }
 
 impl<const SIZE: usize> WeatherStationTable<SIZE> {
   pub fn new() -> BarseResult<Self> {
-    let size = (SIZE * std::mem::size_of::<Entry>()).next_multiple_of(HUGEPAGE_SIZE);
-    let buckets = MmapOptions::new().len(size).map_anon()?;
-    buckets.advise(memmap2::Advice::HugePage)?;
-
-    let mut s = Self { buckets };
-    for i in 0..SIZE {
-      s.entry_at_mut(i).initialize_to_default();
-    }
-    Ok(s)
+    Ok(Self {
+      table: HugepageBackedTable::new()?,
+    })
   }
 
   pub fn iter(&self) -> impl Iterator<Item = (&str, &TemperatureSummary)> {
@@ -42,22 +31,12 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     }
   }
 
-  fn elements_ptr(&self) -> *const Entry {
-    self.buckets.as_ptr() as *const Entry
-  }
-
-  fn mut_elements_ptr(&mut self) -> *mut Entry {
-    self.buckets.as_mut_ptr() as *mut Entry
-  }
-
   fn entry_at(&self, index: usize) -> &Entry {
-    debug_assert!(index < SIZE);
-    unsafe { &*self.elements_ptr().add(index) }
+    self.table.entry_at(index)
   }
 
   fn entry_at_mut(&mut self, index: usize) -> &mut Entry {
-    debug_assert!(index < SIZE);
-    unsafe { &mut *self.mut_elements_ptr().add(index) }
+    self.table.entry_at_mut(index)
   }
 
   fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> &mut Entry {
