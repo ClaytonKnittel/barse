@@ -22,23 +22,28 @@ impl<const SIZE: usize> StringTable<SIZE> {
     self.station_hash(station) as usize % SIZE
   }
 
-  fn find_entry(&mut self, station: &str) -> &mut InlineString {
-    let idx = self.station_index(station);
-
-    if likely(
-      self
-        .table
-        .entry_at_mut(idx)
-        .matches_key_or_initialize(station),
-    ) {
-      return self.entry_at_mut(idx);
+  fn eq_or_initialize(entry: &InlineString, station: &str) -> bool {
+    if likely(entry.initialized()) {
+      likely(entry.eq_foreign_str(station))
+    } else {
+      entry.try_initialize(station)
     }
-
-    // Otherwise we have to search for a bucket.
-    self.scan_for_entry(station, idx)
   }
 
-  pub fn index_of_station(&mut self, station: &str) {
-    self.find_entry(station)
+  fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> usize {
+    (1..SIZE)
+      .map(|i| (start_idx + i) % SIZE)
+      .find(|&idx| Self::eq_or_initialize(self.table.entry_at(idx), station))
+      .expect("No empty bucket found, table is full")
+  }
+
+  pub fn find_entry_index(&mut self, station: &str) -> usize {
+    let idx = self.station_index(station);
+    let entry = self.table.entry_at(idx);
+    if Self::eq_or_initialize(entry, station) {
+      idx
+    } else {
+      self.scan_for_entry(station, idx)
+    }
   }
 }

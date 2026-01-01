@@ -1,3 +1,5 @@
+#[cfg(feature = "multithreaded")]
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::{borrow::Borrow, cmp::Ordering, fmt::Display};
 
 use crate::hugepage_backed_table::InPlaceInitializable;
@@ -16,10 +18,12 @@ pub enum InlineStringState {
 
 const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
 
-#[derive(Clone)]
 #[repr(C, align(8))]
 pub struct InlineString {
   bytes: [u8; STRING_STORAGE_LEN],
+  #[cfg(feature = "multithreaded")]
+  len: AtomicU32,
+  #[cfg(not(feature = "multithreaded"))]
   len: u32,
 }
 
@@ -30,16 +34,8 @@ impl InlineString {
     s
   }
 
-  pub fn is_default(&self) -> bool {
-    self.len == 0
-  }
-
   pub fn is_empty(&self) -> bool {
-    self.len == 0
-  }
-
-  pub fn len(&self) -> usize {
-    self.len as usize
+    self.len() == 0
   }
 
   /// Performs a memcpy from contents to self.value() without calling
@@ -53,6 +49,75 @@ impl InlineString {
     }
   }
 
+  pub fn value_str(&self) -> &str {
+    unsafe { str::from_utf8_unchecked(self.value()) }
+  }
+
+  pub fn value(&self) -> &[u8] {
+    unsafe { self.bytes.get_unchecked(..self.len() as usize) }
+  }
+
+  fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
+    unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
+  }
+}
+
+#[cfg(feature = "multithreaded")]
+impl InlineString {
+  pub fn len(&self) -> usize {
+    self.len.load(AtomicOrdering::Relaxed) as usize
+  }
+
+  fn set_len(&self, len: u32) {
+    self.len.store(len, AtomicOrdering::Release);
+  }
+
+  pub fn initialized(&self) -> bool {
+    let len = self.len.load(AtomicOrdering::Acquire);
+    len != 0 && len != INITIALIZING_RESERVED_LEN
+  }
+
+  fn memcpy_no_libc_under_lock(&self, contents: &str) {
+    debug_assert_eq!(self.len() as u32, INITIALIZING_RESERVED_LEN);
+    let mut_self = unsafe { &mut *(self as *const Self as *mut Self) };
+    mut_self.memcpy_no_libc(contents);
+  }
+
+  pub fn try_initialize(&self, contents: &str) -> bool {
+    debug_assert!(
+      contents.len() <= MAX_STRING_LEN,
+      "{} > {}",
+      contents.len(),
+      MAX_STRING_LEN
+    );
+    self.memcpy_no_libc_under_lock(contents);
+    self.set_len(contents.len() as u32);
+    true
+  }
+
+  #[cfg(target_feature = "avx2")]
+  pub fn eq_foreign_str(&self, other: &str) -> bool {
+    debug_assert!(self.initialized());
+    inline_str_eq_foreign_str(self, other)
+  }
+
+  #[cfg(not(target_feature = "avx2"))]
+  pub fn eq_foreign_str(&self, other: &str) -> bool {
+    debug_assert!(self.initialized());
+    self.value_str() == other
+  }
+}
+
+#[cfg(not(feature = "multithreaded"))]
+impl InlineString {
+  pub fn len(&self) -> usize {
+    self.len as usize
+  }
+
+  pub fn is_default(&self) -> bool {
+    self.len() == 0
+  }
+
   pub fn initialize(&mut self, contents: &str) {
     debug_assert!(
       contents.len() <= MAX_STRING_LEN,
@@ -60,21 +125,8 @@ impl InlineString {
       contents.len(),
       MAX_STRING_LEN
     );
-    // TODO: see if I can avoid the memcpy call
     self.memcpy_no_libc(contents);
     self.len = contents.len() as u32;
-  }
-
-  pub fn value_str(&self) -> &str {
-    unsafe { str::from_utf8_unchecked(self.value()) }
-  }
-
-  pub fn value(&self) -> &[u8] {
-    unsafe { self.bytes.get_unchecked(..self.len as usize) }
-  }
-
-  fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
-    unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 
   #[cfg(target_feature = "avx2")]
@@ -92,6 +144,9 @@ impl Default for InlineString {
   fn default() -> Self {
     Self {
       bytes: [0; STRING_STORAGE_LEN],
+      #[cfg(feature = "multithreaded")]
+      len: AtomicU32::new(0),
+      #[cfg(not(feature = "multithreaded"))]
       len: 0,
     }
   }
@@ -133,7 +188,7 @@ impl InPlaceInitializable for InlineString {
   fn initialize(&mut self) {
     // No need to do anything, a zero-initialized string is correctly initialized.
     debug_assert!(self.bytes.iter().all(|b| *b == 0));
-    debug_assert_eq!(self.len, 0);
+    debug_assert_eq!(self.len(), 0);
   }
 }
 
