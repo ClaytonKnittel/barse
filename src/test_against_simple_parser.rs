@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, collections::HashMap, fmt::Display};
 
-use crate::test_util::random_input_file;
+use crate::{test_util::random_input_file, util::HasIter};
 use googletest::prelude::*;
 use itertools::Itertools;
 
