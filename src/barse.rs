@@ -8,8 +8,8 @@ use crate::build_table::build_temperature_reading_table_from_bytes;
 use crate::build_table_mt::build_temperature_reading_table_from_bytes;
 
 use crate::{
-  error::BarseResult, scanner::SCANNER_CACHE_SIZE, str_hash::TABLE_SIZE,
-  table::WeatherStationTable, temperature_summary::TemperatureSummary,
+  error::BarseResult, scanner::SCANNER_CACHE_SIZE, temperature_summary::TemperatureSummary,
+  util::HasIter,
 };
 
 unsafe fn round_up_to_cache_size_boundary(buffer: &[u8]) -> &[u8] {
@@ -67,7 +67,7 @@ impl<'a> Display for WeatherStation<'a> {
 
 pub fn build_temperature_reading_table(
   input_path: &str,
-) -> BarseResult<WeatherStationTable<TABLE_SIZE>> {
+) -> BarseResult<impl for<'a> HasIter<'a, Item = (&'a str, &'a TemperatureSummary)>> {
   let file = File::open(input_path)?;
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;
