@@ -2,20 +2,28 @@ use crate::{
   error::{BarseError, BarseResult},
   str_hash::TABLE_SIZE,
   string_table::StringTable,
+  temperature_summary::TemperatureSummary,
   temperature_summary_table::TemperatureSummaryTable,
   util::HasIter,
 };
 use std::sync::Arc;
 
-struct SummaryTable<const SIZE: usize> {
-  string_table: StringTable<SIZE>,
+pub struct SummaryTable<const SIZE: usize> {
+  string_table: Arc<StringTable<SIZE>>,
   temp_table: TemperatureSummaryTable<SIZE>,
 }
 
-impl<const SIZE: usize> HasIter for SummaryTable<SIZE> {
-  type Item = u32;
+impl<'a, const SIZE: usize> HasIter<'a> for SummaryTable<SIZE> {
+  type Item = (&'a str, &'a TemperatureSummary);
 
-  fn iter(&'a self) -> impl Iterator<Item = Self::Item> {}
+  fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
+    (0..SIZE).filter_map(|i| {
+      let station = self.string_table.entry_at(i);
+      station
+        .initialized()
+        .then(|| (station.value_str(), self.temp_table.entry_at(i)))
+    })
+  }
 }
 
 pub fn build_temperature_reading_table_from_bytes(
@@ -45,7 +53,7 @@ pub fn build_temperature_reading_table_from_bytes(
     })
     .collect::<Result<Vec<_>, _>>()?;
 
-  let mut map = threads
+  let mut temp_table = threads
     .pop()
     .expect("Thread list will not be empty")
     .join()
@@ -55,8 +63,11 @@ pub fn build_temperature_reading_table_from_bytes(
     let thread_map = thread
       .join()
       .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
-    map.merge(thread_map);
+    temp_table.merge(thread_map);
   }
 
-  Ok(map)
+  Ok(SummaryTable {
+    string_table,
+    temp_table,
+  })
 }

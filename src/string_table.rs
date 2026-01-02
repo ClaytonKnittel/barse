@@ -14,6 +14,10 @@ impl<const SIZE: usize> StringTable<SIZE> {
     })
   }
 
+  pub fn entry_at(&self, index: usize) -> &InlineString {
+    self.table.entry_at(index)
+  }
+
   fn station_hash(&self, station: &str) -> u64 {
     str_hash(station.as_bytes())
   }
@@ -30,16 +34,16 @@ impl<const SIZE: usize> StringTable<SIZE> {
     }
   }
 
-  fn scan_for_entry(&mut self, station: &str, start_idx: usize) -> usize {
+  fn scan_for_entry(&self, station: &str, start_idx: usize) -> usize {
     (1..SIZE)
       .map(|i| (start_idx + i) % SIZE)
       .find(|&idx| Self::eq_or_initialize(self.table.entry_at(idx), station))
       .expect("No empty bucket found, table is full")
   }
 
-  pub fn find_entry_index(&mut self, station: &str) -> usize {
+  pub fn find_entry_index(&self, station: &str) -> usize {
     let idx = self.station_index(station);
-    let entry = self.table.entry_at(idx);
+    let entry = self.entry_at(idx);
     if Self::eq_or_initialize(entry, station) {
       idx
     } else {

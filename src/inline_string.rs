@@ -1,6 +1,6 @@
 #[cfg(feature = "multithreaded")]
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
-use std::{borrow::Borrow, cmp::Ordering, fmt::Display};
+use std::{borrow::Borrow, cell::UnsafeCell, cmp::Ordering, fmt::Display};
 
 use crate::hugepage_backed_table::InPlaceInitializable;
 #[cfg(target_feature = "avx2")]
@@ -13,7 +13,7 @@ const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 #[repr(C, align(8))]
 #[cfg_attr(not(feature = "multithreaded"), derive(Clone))]
 pub struct InlineString {
-  bytes: [u8; STRING_STORAGE_LEN],
+  bytes: UnsafeCell<[u8; STRING_STORAGE_LEN]>,
   #[cfg(feature = "multithreaded")]
   len: AtomicU32,
   #[cfg(not(feature = "multithreaded"))]
@@ -21,17 +21,20 @@ pub struct InlineString {
 }
 
 impl InlineString {
+  fn bytes(&self) -> &[u8; STRING_STORAGE_LEN] {
+    unsafe { &*self.bytes.get() }
+  }
+
   pub fn is_empty(&self) -> bool {
     self.len() == 0
   }
 
   /// Performs a memcpy from contents to self.value() without calling
   /// libc::memcpy.
-  fn memcpy_no_libc(&mut self, contents: &str) {
+  fn memcpy_no_libc(bytes: &mut [u8], contents: &str) {
     for i in 0..contents.len().min(MAX_STRING_LEN) {
       unsafe {
-        *self.bytes.get_unchecked_mut(i) =
-          std::hint::black_box(*contents.as_bytes().get_unchecked(i));
+        *bytes.get_unchecked_mut(i) = std::hint::black_box(*contents.as_bytes().get_unchecked(i));
       }
     }
   }
@@ -41,7 +44,7 @@ impl InlineString {
   }
 
   pub fn value(&self) -> &[u8] {
-    unsafe { self.bytes.get_unchecked(..self.len() as usize) }
+    unsafe { self.bytes().get_unchecked(..self.len()) }
   }
 
   fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
@@ -76,8 +79,7 @@ impl InlineString {
 
   fn memcpy_no_libc_under_lock(&self, contents: &str) {
     debug_assert_eq!(self.len() as u32, Self::INITIALIZING_RESERVED_LEN);
-    let mut_self = unsafe { &mut *(self as *const Self as *mut Self) };
-    mut_self.memcpy_no_libc(contents);
+    Self::memcpy_no_libc(unsafe { &mut *self.bytes.get() }, contents);
   }
 
   pub fn try_initialize(&self, contents: &str) -> bool {
@@ -87,6 +89,7 @@ impl InlineString {
       contents.len(),
       MAX_STRING_LEN
     );
+
     self.memcpy_no_libc_under_lock(contents);
     self.set_len(contents.len() as u32);
     true
@@ -147,7 +150,7 @@ impl InlineString {
 impl Default for InlineString {
   fn default() -> Self {
     Self {
-      bytes: [0; STRING_STORAGE_LEN],
+      bytes: UnsafeCell::new([0; STRING_STORAGE_LEN]),
       #[cfg(feature = "multithreaded")]
       len: AtomicU32::new(0),
       #[cfg(not(feature = "multithreaded"))]
@@ -191,10 +194,12 @@ impl Display for InlineString {
 impl InPlaceInitializable for InlineString {
   fn initialize(&mut self) {
     // No need to do anything, a zero-initialized string is correctly initialized.
-    debug_assert!(self.bytes.iter().all(|b| *b == 0));
+    debug_assert!(self.bytes().iter().all(|b| *b == 0));
     debug_assert_eq!(self.len(), 0);
   }
 }
+
+unsafe impl Sync for InlineString {}
 
 #[cfg(test)]
 mod tests {
@@ -221,7 +226,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
     expect_true!(i1 == i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
-    expect_eq!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_eq!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
@@ -231,7 +236,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str1.as_bytes()[..5]).unwrap());
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
@@ -242,13 +247,13 @@ mod tests {
     let i2 = InlineString::new(str2);
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
   fn test_eq_hash_with_u8_slice() {
     expect_eq!(
-      str_hash(&InlineString::new("word").bytes),
+      str_hash(InlineString::new("word").bytes()),
       str_hash("word".as_bytes())
     );
   }

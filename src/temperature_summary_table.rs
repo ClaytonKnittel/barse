@@ -14,13 +14,17 @@ impl<const SIZE: usize> TemperatureSummaryTable<SIZE> {
     })
   }
 
+  pub fn entry_at(&self, index: usize) -> &TemperatureSummary {
+    self.table.entry_at(index)
+  }
+
   pub fn add_reading_at_index(&mut self, temp: TemperatureReading, index: usize) {
     self.table.entry_at_mut(index).add_reading(temp);
   }
 
   pub fn merge(&mut self, other: Self) {
     for i in 0..SIZE {
-      self.table.entry_at_mut(i).merge(other.table.entry_at(i));
+      self.table.entry_at_mut(i).merge(other.entry_at(i));
     }
   }
 }
