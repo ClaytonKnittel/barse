@@ -62,7 +62,7 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
 }
 
 impl<'a, const SIZE: usize> HasIter<'a> for WeatherStationTable<SIZE> {
-  type Item = (&'a str, &'a TemperatureSummary);
+  type Item = (&'a str, TemperatureSummary);
 
   fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
     WeatherStationIterator {
@@ -84,7 +84,7 @@ struct WeatherStationIterator<'a, const SIZE: usize> {
 }
 
 impl<'a, const SIZE: usize> Iterator for WeatherStationIterator<'a, SIZE> {
-  type Item = (&'a str, &'a TemperatureSummary);
+  type Item = (&'a str, TemperatureSummary);
 
   fn next(&mut self) -> Option<Self::Item> {
     while self.index < SIZE {
@@ -124,10 +124,10 @@ mod tests {
       some((
         eq("station1"),
         pat!(TemperatureSummary {
-          min: &TemperatureReading::new(123),
-          max: &TemperatureReading::new(123),
-          total: &123,
-          count: &1,
+          min: TemperatureReading::new(123),
+          max: TemperatureReading::new(123),
+          total: 123,
+          count: 1,
         })
       ))
     );
@@ -145,21 +145,21 @@ mod tests {
       unordered_elements_are![
         (
           eq(&"station1"),
-          derefs_to(pat!(TemperatureSummary {
+          pat!(TemperatureSummary {
             min: &TemperatureReading::new(123),
             max: &TemperatureReading::new(123),
             total: &123,
             count: &1,
-          }))
+          })
         ),
         (
           eq(&"station2"),
-          derefs_to(pat!(TemperatureSummary {
+          pat!(TemperatureSummary {
             min: &TemperatureReading::new(456),
             max: &TemperatureReading::new(456),
             total: &456,
             count: &1,
-          }))
+          })
         )
       ]
     );
@@ -176,12 +176,12 @@ mod tests {
       elements,
       elements_are![(
         eq(&"station1"),
-        derefs_to(pat!(TemperatureSummary {
+        pat!(TemperatureSummary {
           min: &TemperatureReading::new(123),
           max: &TemperatureReading::new(456),
           total: &579,
           count: &2,
-        }))
+        })
       )]
     );
   }

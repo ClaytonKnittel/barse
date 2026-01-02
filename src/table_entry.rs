@@ -1,6 +1,8 @@
 use crate::{
-  hugepage_backed_table::InPlaceInitializable, inline_string::InlineString,
-  temperature_reading::TemperatureReading, temperature_summary::TemperatureSummary, util::likely,
+  inline_string::InlineString,
+  temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary,
+  util::{likely, InPlaceInitializable},
 };
 
 #[derive(Default, Clone)]
@@ -34,8 +36,8 @@ impl Entry {
     self.key.is_default()
   }
 
-  pub fn to_iter_pair(&self) -> (&str, &TemperatureSummary) {
-    (self.key.value_str(), &self.temp_summary)
+  pub fn to_iter_pair(&self) -> (&str, TemperatureSummary) {
+    (self.key.value_str(), self.temp_summary.clone())
   }
 }
 
