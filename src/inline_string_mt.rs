@@ -1,10 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::{borrow::Borrow, cell::UnsafeCell, cmp::Ordering, fmt::Display};
 
-use crate::hugepage_backed_table::InPlaceInitializable;
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
-use crate::util::likely;
+use crate::util::{likely, InPlaceInitializable};
 
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;

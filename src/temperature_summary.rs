@@ -1,4 +1,4 @@
-use crate::{hugepage_backed_table::InPlaceInitializable, temperature_reading::TemperatureReading};
+use crate::{temperature_reading::TemperatureReading, util::InPlaceInitializable};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TemperatureSummary {

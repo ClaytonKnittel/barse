@@ -1,9 +1,14 @@
+use std::slice;
+
 use memmap2::MmapMut;
 
 use crate::{
-  error::BarseResult, hugepage_backed_table::allocate_hugepages, inline_string_mt::InlineString,
-  str_hash::str_hash, temperature_reading::TemperatureReading,
-  temperature_summary::TemperatureSummary, util::HasIter,
+  error::BarseResult,
+  inline_string_mt::InlineString,
+  str_hash::str_hash,
+  temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary,
+  util::{allocate_hugepages, HasIter},
 };
 
 pub struct SharedTable<const SIZE: usize> {
@@ -34,23 +39,32 @@ impl<const SIZE: usize> SharedTable<SIZE> {
     self.elements.as_ptr() as *mut u8
   }
 
-  fn entry_at(&self, index: usize, thread_index: u32) -> (&InlineString, &mut TemperatureSummary) {
-    debug_assert!(thread_index < self.n_threads);
-    let thread_local_offset = std::mem::size_of::<InlineString>()
-      + thread_index as usize * std::mem::size_of::<TemperatureSummary>();
+  fn entries_at(&self, index: usize) -> (&InlineString, &mut [TemperatureSummary]) {
+    let thread_local_array_offset = std::mem::size_of::<InlineString>();
 
     let entry_start_ptr = unsafe {
       self
         .elements_ptr()
         .byte_add(index * Self::element_size(self.n_threads))
     };
-    let temp_summary_start_ptr = unsafe { entry_start_ptr.add(thread_local_offset) };
+    let temp_summary_array_start_ptr = unsafe { entry_start_ptr.add(thread_local_array_offset) };
     unsafe {
       (
         &*(entry_start_ptr as *const InlineString),
-        &mut *(temp_summary_start_ptr as *mut TemperatureSummary),
+        slice::from_raw_parts_mut(
+          temp_summary_array_start_ptr as *mut TemperatureSummary,
+          self.n_threads as usize,
+        ),
       )
     }
+  }
+
+  fn entry_at(&self, index: usize, thread_index: u32) -> (&InlineString, &mut TemperatureSummary) {
+    debug_assert!(thread_index < self.n_threads);
+    let (station, summaries) = self.entries_at(index);
+    (station, unsafe {
+      summaries.get_unchecked_mut(thread_index as usize)
+    })
   }
 
   fn station_hash(&self, station: &str) -> u64 {
@@ -95,6 +109,20 @@ impl<'a, const SIZE: usize> HasIter<'a> for SharedTable<SIZE> {
   type Item = (&'a str, TemperatureSummary);
 
   fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
-    std::iter::empty()
+    (0..SIZE)
+      .map(|index| self.entries_at(index))
+      .map(|(station, temp_summaries)| {
+        (
+          station.value_str(),
+          temp_summaries
+            .iter()
+            .cloned()
+            .reduce(|mut summary1, summary2| {
+              summary1.merge(&summary2);
+              summary1
+            })
+            .expect("Summary array should not be empty"),
+        )
+      })
   }
 }

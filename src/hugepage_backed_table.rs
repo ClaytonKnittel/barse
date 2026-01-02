@@ -1,22 +1,11 @@
 use std::marker::PhantomData;
 
-use memmap2::{MmapMut, MmapOptions};
+use memmap2::MmapMut;
 
-use crate::error::BarseResult;
-
-pub const HUGEPAGE_SIZE: usize = 2 * 1024 * 1024;
-
-pub fn allocate_hugepages(bytes: usize) -> BarseResult<MmapMut> {
-  let size = bytes.next_multiple_of(HUGEPAGE_SIZE);
-  let elements = MmapOptions::new().len(size).map_anon()?;
-  #[cfg(target_os = "linux")]
-  elements.advise(memmap2::Advice::HugePage)?;
-  Ok(elements)
-}
-
-pub trait InPlaceInitializable {
-  fn initialize(&mut self);
-}
+use crate::{
+  error::BarseResult,
+  util::{allocate_hugepages, InPlaceInitializable},
+};
 
 pub struct HugepageBackedTable<T, const SIZE: usize> {
   elements: MmapMut,
