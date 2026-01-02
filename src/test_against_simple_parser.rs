@@ -118,7 +118,7 @@ fn barse_temperature_reading_summaries(input_bytes: &[u8]) -> impl Iterator<Item
   build_temperature_reading_table_from_bytes(input_bytes)
     .unwrap()
     .iter()
-    .map(|(station, summary)| crate::barse::WeatherStation::new(station, *summary))
+    .map(|(station, summary)| crate::barse::WeatherStation::new(station, summary))
     .sorted_unstable()
     .map(|station| format!("{station}"))
     .collect_vec()

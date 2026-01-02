@@ -67,7 +67,7 @@ impl<'a> Display for WeatherStation<'a> {
 
 pub fn build_temperature_reading_table(
   input_path: &str,
-) -> BarseResult<impl for<'a> HasIter<'a, Item = (&'a str, &'a TemperatureSummary)>> {
+) -> BarseResult<impl for<'a> HasIter<'a, Item = (&'a str, TemperatureSummary)>> {
   let file = File::open(input_path)?;
   let map = unsafe { MmapOptions::new().map(&file) }?;
   map.advise(Advice::Sequential)?;

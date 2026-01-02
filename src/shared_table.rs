@@ -2,7 +2,8 @@ use memmap2::MmapMut;
 
 use crate::{
   error::BarseResult, hugepage_backed_table::allocate_hugepages, inline_string_mt::InlineString,
-  str_hash::str_hash, temperature_summary::TemperatureSummary,
+  str_hash::str_hash, temperature_reading::TemperatureReading,
+  temperature_summary::TemperatureSummary, util::HasIter,
 };
 
 pub struct SharedTable<const SIZE: usize> {
@@ -33,11 +34,7 @@ impl<const SIZE: usize> SharedTable<SIZE> {
     self.elements.as_ptr() as *mut u8
   }
 
-  pub fn entry_at(
-    &self,
-    index: usize,
-    thread_index: u32,
-  ) -> (&InlineString, &mut TemperatureSummary) {
+  fn entry_at(&self, index: usize, thread_index: u32) -> (&InlineString, &mut TemperatureSummary) {
     debug_assert!(thread_index < self.n_threads);
     let thread_local_offset = std::mem::size_of::<InlineString>()
       + thread_index as usize * std::mem::size_of::<TemperatureSummary>();
@@ -86,5 +83,18 @@ impl<const SIZE: usize> SharedTable<SIZE> {
     } else {
       self.scan_for_entry(station, idx, thread_index)
     }
+  }
+
+  pub fn add_reading(&self, station: &str, temp: TemperatureReading, thread_index: u32) {
+    let temp_summary = self.find_entry(station, thread_index);
+    temp_summary.add_reading(temp);
+  }
+}
+
+impl<'a, const SIZE: usize> HasIter<'a> for SharedTable<SIZE> {
+  type Item = (&'a str, TemperatureSummary);
+
+  fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
+    std::iter::empty()
   }
 }

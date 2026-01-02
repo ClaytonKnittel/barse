@@ -1,73 +1,40 @@
 use crate::{
   error::{BarseError, BarseResult},
+  shared_table::SharedTable,
   str_hash::TABLE_SIZE,
-  string_table::StringTable,
-  temperature_summary::TemperatureSummary,
-  temperature_summary_table::TemperatureSummaryTable,
-  util::HasIter,
 };
 use std::sync::Arc;
 
-pub struct SummaryTable<const SIZE: usize> {
-  string_table: Arc<StringTable<SIZE>>,
-  temp_table: TemperatureSummaryTable<SIZE>,
-}
-
-impl<'a, const SIZE: usize> HasIter<'a> for SummaryTable<SIZE> {
-  type Item = (&'a str, &'a TemperatureSummary);
-
-  fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
-    (0..SIZE).filter_map(|i| {
-      let station = self.string_table.entry_at(i);
-      station
-        .initialized()
-        .then(|| (station.value_str(), self.temp_table.entry_at(i)))
-    })
-  }
-}
-
 pub fn build_temperature_reading_table_from_bytes(
   input: &[u8],
-) -> BarseResult<SummaryTable<TABLE_SIZE>> {
+) -> BarseResult<SharedTable<TABLE_SIZE>> {
   let thread_count = std::thread::available_parallelism()
     .map(|nonzero| nonzero.get())
-    .unwrap_or(1);
+    .unwrap_or(1) as u32;
 
   let slicer = Arc::new(unsafe { crate::slicer::Slicer::new(input) });
-  let string_table = Arc::new(StringTable::new()?);
+  let shared_table = Arc::new(SharedTable::new(thread_count)?);
 
-  let mut threads = (0..thread_count)
-    .map(|_| -> BarseResult<_> {
+  let threads = (0..thread_count)
+    .map(|thread_index| -> BarseResult<_> {
       let slicer = slicer.clone();
-      let string_table = string_table.clone();
-      let mut summary_table = TemperatureSummaryTable::new()?;
+      let shared_table = shared_table.clone();
       Ok(std::thread::spawn(move || {
         while let Some(slice) = slicer.next_slice() {
           for (station, temp) in slice {
-            let idx = string_table.find_entry_index(station);
-            summary_table.add_reading_at_index(temp, idx);
+            shared_table.add_reading(station, temp, thread_index);
           }
         }
-        summary_table
       }))
     })
     .collect::<Result<Vec<_>, _>>()?;
 
-  let mut temp_table = threads
-    .pop()
-    .expect("Thread list will not be empty")
-    .join()
-    .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
-
   for thread in threads {
-    let thread_map = thread
+    thread
       .join()
       .map_err(|err| BarseError::new(format!("Failed to join thread: {err:?}")))?;
-    temp_table.merge(thread_map);
   }
 
-  Ok(SummaryTable {
-    string_table,
-    temp_table,
-  })
+  Arc::try_unwrap(shared_table)
+    .map_err(|_| BarseError::new("Failed to unwrap shared table Arc".to_owned()).into())
 }
