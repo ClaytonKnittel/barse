@@ -1,5 +1,5 @@
 use crate::{
-  error::BarseResult, hugepage_backed_table::HugepageBackedTable, inline_string::InlineString,
+  error::BarseResult, hugepage_backed_table::HugepageBackedTable, inline_string_mt::InlineString,
   str_hash::str_hash,
 };
 

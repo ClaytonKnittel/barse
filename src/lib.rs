@@ -8,7 +8,10 @@ mod build_table;
 mod build_table_mt;
 pub mod error;
 mod hugepage_backed_table;
+#[cfg(not(feature = "multithreaded"))]
 pub mod inline_string;
+#[cfg(feature = "multithreaded")]
+pub mod inline_string_mt;
 pub mod print_summary;
 pub mod scanner;
 #[cfg(not(target_feature = "avx2"))]
