@@ -6,6 +6,14 @@ use crate::error::BarseResult;
 
 pub const HUGEPAGE_SIZE: usize = 2 * 1024 * 1024;
 
+pub fn allocate_hugepages(bytes: usize) -> BarseResult<MmapMut> {
+  let size = bytes.next_multiple_of(HUGEPAGE_SIZE);
+  let elements = MmapOptions::new().len(size).map_anon()?;
+  #[cfg(target_os = "linux")]
+  elements.advise(memmap2::Advice::HugePage)?;
+  Ok(elements)
+}
+
 pub trait InPlaceInitializable {
   fn initialize(&mut self);
 }
@@ -17,10 +25,7 @@ pub struct HugepageBackedTable<T, const SIZE: usize> {
 
 impl<T: InPlaceInitializable, const SIZE: usize> HugepageBackedTable<T, SIZE> {
   pub fn new() -> BarseResult<Self> {
-    let size = (SIZE * std::mem::size_of::<T>()).next_multiple_of(HUGEPAGE_SIZE);
-    let elements = MmapOptions::new().len(size).map_anon()?;
-    #[cfg(target_os = "linux")]
-    elements.advise(memmap2::Advice::HugePage)?;
+    let elements = allocate_hugepages(SIZE * std::mem::size_of::<T>())?;
 
     let mut table = Self {
       elements,
