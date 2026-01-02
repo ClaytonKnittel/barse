@@ -5,6 +5,8 @@ use std::{borrow::Borrow, cell::UnsafeCell, cmp::Ordering, fmt::Display};
 use crate::hugepage_backed_table::InPlaceInitializable;
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
+#[cfg(feature = "multithreaded")]
+use crate::util::likely;
 
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
@@ -59,17 +61,13 @@ impl InlineString {
   #[cfg(test)]
   pub fn new(contents: &str) -> Self {
     let s = Self::default();
-    let initialized = s.try_initialize(contents);
-    debug_assert!(initialized);
+    Self::memcpy_no_libc(unsafe { &mut *s.bytes.get() }, contents);
+    s.len.store(contents.len() as u32, AtomicOrdering::Relaxed);
     s
   }
 
   pub fn len(&self) -> usize {
     self.len.load(AtomicOrdering::Relaxed) as usize
-  }
-
-  fn set_len(&self, len: u32) {
-    self.len.store(len, AtomicOrdering::Release);
   }
 
   pub fn initialized(&self) -> bool {
@@ -82,29 +80,52 @@ impl InlineString {
     Self::memcpy_no_libc(unsafe { &mut *self.bytes.get() }, contents);
   }
 
-  pub fn try_initialize(&self, contents: &str) -> bool {
-    debug_assert!(
-      contents.len() <= MAX_STRING_LEN,
-      "{} > {}",
-      contents.len(),
-      MAX_STRING_LEN
-    );
-
+  fn initialize_contents_under_lock(&self, contents: &str) {
+    debug_assert!(contents.len() <= MAX_STRING_LEN,);
     self.memcpy_no_libc_under_lock(contents);
-    self.set_len(contents.len() as u32);
-    true
   }
 
   #[cfg(target_feature = "avx2")]
-  pub fn eq_foreign_str(&self, other: &str) -> bool {
+  fn eq_foreign_str(&self, other: &str) -> bool {
     debug_assert!(self.initialized());
     inline_str_eq_foreign_str(self, other)
   }
 
   #[cfg(not(target_feature = "avx2"))]
-  pub fn eq_foreign_str(&self, other: &str) -> bool {
+  fn eq_foreign_str(&self, other: &str) -> bool {
     debug_assert!(self.initialized());
     self.value_str() == other
+  }
+
+  fn wait_until_initialized(&self) {
+    while self.len.load(AtomicOrdering::Acquire) == Self::INITIALIZING_RESERVED_LEN {
+      std::hint::spin_loop();
+    }
+  }
+
+  pub fn eq_or_initialize(&self, station: &str) -> bool {
+    if likely(self.initialized()) {
+      return likely(self.eq_foreign_str(station));
+    }
+
+    let prev_len = self
+      .len
+      .swap(Self::INITIALIZING_RESERVED_LEN, AtomicOrdering::Acquire);
+    if prev_len == 0 {
+      self.initialize_contents_under_lock(station);
+      self
+        .len
+        .store(station.len() as u32, AtomicOrdering::Release);
+      return true;
+    } else if prev_len == Self::INITIALIZING_RESERVED_LEN {
+      self.wait_until_initialized();
+    } else {
+      // We accidentally overwrite the length with INITIALIZING_RESERVED_LEN,
+      // restore the length:
+      self.len.store(prev_len, AtomicOrdering::Relaxed);
+    }
+
+    self.eq_foreign_str(station)
   }
 }
 
