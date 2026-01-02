@@ -8,7 +8,7 @@ use crate::{
   str_hash::str_hash,
   temperature_reading::TemperatureReading,
   temperature_summary::TemperatureSummary,
-  util::{allocate_hugepages, HasIter},
+  util::{allocate_hugepages, HasIter, InPlaceInitializable},
 };
 
 pub struct SharedTable<const SIZE: usize> {
@@ -26,26 +26,18 @@ impl<const SIZE: usize> SharedTable<SIZE> {
     Self::element_size(n_threads) * SIZE
   }
 
-  pub fn new(n_threads: u32) -> BarseResult<Self> {
-    let table_size = Self::table_size(n_threads);
-    let elements = allocate_hugepages(table_size)?;
-    Ok(Self {
-      elements,
-      n_threads,
-    })
-  }
-
-  fn elements_ptr(&self) -> *mut u8 {
-    self.elements.as_ptr() as *mut u8
-  }
-
-  fn entries_at(&self, index: usize) -> (&InlineString, &mut [TemperatureSummary]) {
+  #[allow(clippy::mut_from_ref)]
+  fn entries_from_parts(
+    index: usize,
+    elements: &[u8],
+    n_threads: u32,
+  ) -> (&InlineString, &mut [TemperatureSummary]) {
     let thread_local_array_offset = std::mem::size_of::<InlineString>();
 
     let entry_start_ptr = unsafe {
-      self
-        .elements_ptr()
-        .byte_add(index * Self::element_size(self.n_threads))
+      elements
+        .as_ptr()
+        .byte_add(index * Self::element_size(n_threads))
     };
     let temp_summary_array_start_ptr = unsafe { entry_start_ptr.add(thread_local_array_offset) };
     unsafe {
@@ -53,12 +45,36 @@ impl<const SIZE: usize> SharedTable<SIZE> {
         &*(entry_start_ptr as *const InlineString),
         slice::from_raw_parts_mut(
           temp_summary_array_start_ptr as *mut TemperatureSummary,
-          self.n_threads as usize,
+          n_threads as usize,
         ),
       )
     }
   }
 
+  fn initialize_elements(elements: &MmapMut, n_threads: u32) {
+    for index in 0..SIZE {
+      let (_, temp_summaries) = Self::entries_from_parts(index, elements, n_threads);
+      for summary in temp_summaries {
+        summary.initialize();
+      }
+    }
+  }
+
+  pub fn new(n_threads: u32) -> BarseResult<Self> {
+    let table_size = Self::table_size(n_threads);
+    let elements = allocate_hugepages(table_size)?;
+    Self::initialize_elements(&elements, n_threads);
+    Ok(Self {
+      elements,
+      n_threads,
+    })
+  }
+
+  fn entries_at(&self, index: usize) -> (&InlineString, &mut [TemperatureSummary]) {
+    Self::entries_from_parts(index, &self.elements, self.n_threads)
+  }
+
+  #[allow(clippy::mut_from_ref)]
   fn entry_at(&self, index: usize, thread_index: u32) -> (&InlineString, &mut TemperatureSummary) {
     debug_assert!(thread_index < self.n_threads);
     let (station, summaries) = self.entries_at(index);
@@ -111,6 +127,7 @@ impl<'a, const SIZE: usize> HasIter<'a> for SharedTable<SIZE> {
   fn iter(&'a self) -> impl Iterator<Item = Self::Item> {
     (0..SIZE)
       .map(|index| self.entries_at(index))
+      .filter(|(station, _)| station.initialized())
       .map(|(station, temp_summaries)| {
         (
           station.value_str(),
