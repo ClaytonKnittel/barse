@@ -107,20 +107,25 @@ fn scramble_u128(v: u128) -> u128 {
   (x1 as u128) + ((x2 as u128) << 64)
 }
 
+fn scramble_g(v: u128) -> u128 {
+  let v = v ^ (v >> 17);
+  v ^ (v >> 29)
+}
+
 fn entropy_hash(bytes: &str) -> u64 {
   // const EXTRACT_MASK: u64 = 0x0101050c0d0c0c0d;
   // const EXTRACT_MASK: u128 = 0x00000000000000040405090d0d0d0c1c;
   // const EXTRACT_MASK: u128 = 0x00000000000000040005040d0c0d0c0d;
-  const EXTRACT_MASK: u128 = 0x0000000000000000000000120a0e0f96;
+  const EXTRACT_MASK: u128 = 0x0000000000000000000000140d171d1c;
   let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
   let v = mask_above(v, bytes.len()) as u128;
-  let v = scramble_u128(v);
+  let v = scramble_g(v);
   compress(v, EXTRACT_MASK) as u64
 }
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const TABLE_BITS: u32 = 15;
+  const TABLE_BITS: u32 = 16;
   const CAP: usize = 1 << TABLE_BITS;
 
   const BELOW: usize = 32;

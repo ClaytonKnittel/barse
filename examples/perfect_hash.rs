@@ -66,7 +66,7 @@ impl Ord for F32Ord {
 }
 
 fn highest_entropy_mask(stations: &[u128]) -> u128 {
-  const TABLE_BITS: u32 = 15;
+  const TABLE_BITS: u32 = 16;
 
   let mut rng = rng();
   let mut bits = u128::MAX;
@@ -139,11 +139,12 @@ fn find_bits(stations: &[String]) {
     let rand_p2 = rng.next_u64();
     let scrambled_stations = station_vals
       .iter()
-      .map(|&station| {
-        let x1 = mul_hi(station as u64, rand_p1);
-        let x2 = mul_hi((station >> 64) as u64, rand_p2);
-        (x1 as u128) + ((x2 as u128) << 64)
-      })
+      .map(|&station| scramble(station))
+      // .map(|&station| {
+      //   let x1 = mul_hi(station as u64, rand_p1);
+      //   let x2 = mul_hi((station >> 64) as u64, rand_p2);
+      //   (x1 as u128) + ((x2 as u128) << 64)
+      // })
       .collect_vec();
 
     let mask = highest_entropy_mask(&scrambled_stations);
