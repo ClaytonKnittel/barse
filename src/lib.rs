@@ -7,7 +7,6 @@ mod build_table;
 #[cfg(feature = "multithreaded")]
 mod build_table_mt;
 pub mod error;
-#[cfg(not(feature = "multithreaded"))]
 mod hugepage_backed_table;
 #[cfg(not(feature = "multithreaded"))]
 pub mod inline_string;
@@ -33,7 +32,10 @@ pub mod table;
 #[cfg(not(feature = "multithreaded"))]
 mod table_entry;
 pub mod temperature_reading;
+#[cfg(not(feature = "multithreaded"))]
 mod temperature_summary;
+#[cfg(feature = "multithreaded")]
+mod temperature_summary_mt;
 #[cfg(test)]
 pub mod test_against_simple_parser;
 #[cfg(test)]

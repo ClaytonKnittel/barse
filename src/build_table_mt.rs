@@ -13,16 +13,16 @@ pub fn build_temperature_reading_table_from_bytes(
     .unwrap_or(1) as u32;
 
   let slicer = Arc::new(unsafe { crate::slicer::Slicer::new(input) });
-  let shared_table = Arc::new(SharedTable::new(thread_count)?);
+  let shared_table = Arc::new(SharedTable::new()?);
 
   let threads = (0..thread_count)
-    .map(|thread_index| -> BarseResult<_> {
+    .map(|_| -> BarseResult<_> {
       let slicer = slicer.clone();
       let shared_table = shared_table.clone();
       Ok(std::thread::spawn(move || {
         while let Some(slice) = slicer.next_slice() {
           for (station, temp) in slice {
-            shared_table.add_reading(station, temp, thread_index);
+            shared_table.add_reading(station, temp);
           }
         }
       }))
