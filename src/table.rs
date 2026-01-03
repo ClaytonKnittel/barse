@@ -21,13 +21,6 @@ impl<const SIZE: usize> WeatherStationTable<SIZE> {
     })
   }
 
-  pub fn merge(&mut self, other: Self) {
-    for (station, summary) in other.iter() {
-      let entry = self.find_entry(station);
-      entry.merge_summary(summary);
-    }
-  }
-
   fn entry_at(&self, index: usize) -> &Entry {
     self.table.entry_at(index)
   }
@@ -190,82 +183,6 @@ mod tests {
           count: &2,
         }))
       )]
-    );
-  }
-
-  #[gtest]
-  fn test_merge() {
-    let mut table1 = new_table::<16>();
-    table1.add_reading("station1", TemperatureReading::new(123));
-    table1.add_reading("station1", TemperatureReading::new(-456));
-    table1.add_reading("station2", TemperatureReading::new(324));
-
-    let mut table2 = new_table::<16>();
-    table2.add_reading("station1", TemperatureReading::new(-100));
-    table2.add_reading("station2", TemperatureReading::new(-200));
-    table2.add_reading("station2", TemperatureReading::new(-300));
-
-    table1.merge(table2);
-    let elements = table1.iter().collect_vec();
-    expect_that!(
-      elements,
-      unordered_elements_are![
-        (
-          eq(&"station1"),
-          derefs_to(pat!(TemperatureSummary {
-            min: &TemperatureReading::new(-456),
-            max: &TemperatureReading::new(123),
-            total: &-433,
-            count: &3,
-          }))
-        ),
-        (
-          eq(&"station2"),
-          derefs_to(pat!(TemperatureSummary {
-            min: &TemperatureReading::new(-300),
-            max: &TemperatureReading::new(324),
-            total: &-176,
-            count: &3,
-          }))
-        )
-      ]
-    );
-  }
-
-  #[gtest]
-  fn test_merge_collisions() {
-    let mut table1 = new_table::<16>();
-    table1.add_reading("station station 1", TemperatureReading::new(10));
-    table1.add_reading("station station 2", TemperatureReading::new(30));
-
-    let mut table2 = new_table::<16>();
-    table2.add_reading("station station 2", TemperatureReading::new(-30));
-    table2.add_reading("station station 1", TemperatureReading::new(-100));
-
-    table1.merge(table2);
-    let elements = table1.iter().collect_vec();
-    expect_that!(
-      elements,
-      unordered_elements_are![
-        (
-          eq(&"station station 1"),
-          derefs_to(pat!(TemperatureSummary {
-            min: &TemperatureReading::new(-100),
-            max: &TemperatureReading::new(10),
-            total: &-90,
-            count: &2,
-          }))
-        ),
-        (
-          eq(&"station station 2"),
-          derefs_to(pat!(TemperatureSummary {
-            min: &TemperatureReading::new(-30),
-            max: &TemperatureReading::new(30),
-            total: &0,
-            count: &2,
-          }))
-        )
-      ]
     );
   }
 }

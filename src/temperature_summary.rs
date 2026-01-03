@@ -1,4 +1,4 @@
-use crate::temperature_reading::TemperatureReading;
+use crate::{hugepage_backed_table::InPlaceInitializable, temperature_reading::TemperatureReading};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TemperatureSummary {
@@ -9,20 +9,6 @@ pub struct TemperatureSummary {
 }
 
 impl TemperatureSummary {
-  pub fn initialize(&mut self) {
-    self.min = TemperatureReading::new(i16::MAX);
-    self.max = TemperatureReading::new(i16::MIN);
-    debug_assert_eq!(self.total, 0);
-    debug_assert_eq!(self.count, 0);
-  }
-
-  pub fn merge(&mut self, other: &Self) {
-    self.min = self.min.min(other.min);
-    self.max = self.max.max(other.max);
-    self.total += other.total;
-    self.count += other.count;
-  }
-
   pub fn min(&self) -> TemperatureReading {
     self.min
   }
@@ -43,6 +29,22 @@ impl TemperatureSummary {
     self.max = self.max.max(temp);
     self.total += temp.reading() as i64;
     self.count += 1;
+  }
+
+  pub fn merge(&mut self, other: &Self) {
+    self.min = self.min.min(other.min);
+    self.max = self.max.max(other.max);
+    self.total += other.total;
+    self.count += other.count;
+  }
+}
+
+impl InPlaceInitializable for TemperatureSummary {
+  fn initialize(&mut self) {
+    self.min = TemperatureReading::new(i16::MAX);
+    self.max = TemperatureReading::new(i16::MIN);
+    debug_assert_eq!(self.total, 0);
+    debug_assert_eq!(self.count, 0);
   }
 }
 

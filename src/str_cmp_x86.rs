@@ -2,10 +2,11 @@ use std::arch::x86_64::{
   __m256i, _mm256_and_si256, _mm256_loadu_si256, _mm256_testz_si256, _mm256_xor_si256,
 };
 
-use crate::{
-  inline_string::InlineString,
-  util::{unaligned_read_would_cross_page_boundary, unlikely},
-};
+#[cfg(not(feature = "multithreaded"))]
+use crate::inline_string::InlineString;
+#[cfg(feature = "multithreaded")]
+use crate::inline_string_mt::InlineString;
+use crate::util::{unaligned_read_would_cross_page_boundary, unlikely};
 
 const M256_BYTES: usize = 32;
 
@@ -68,7 +69,11 @@ pub fn inline_str_eq_foreign_str(inline_str: &InlineString, other: &str) -> bool
 mod tests {
   use googletest::prelude::*;
 
-  use crate::{inline_string::InlineString, str_cmp_x86::inline_str_eq_foreign_str};
+  #[cfg(not(feature = "multithreaded"))]
+  use crate::inline_string::InlineString;
+  #[cfg(feature = "multithreaded")]
+  use crate::inline_string_mt::InlineString;
+  use crate::str_cmp_x86::inline_str_eq_foreign_str;
 
   #[gtest]
   fn test_cmp_eq() {

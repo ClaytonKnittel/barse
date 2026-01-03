@@ -1,26 +1,34 @@
-use std::{borrow::Borrow, cmp::Ordering, fmt::Display};
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use std::{borrow::Borrow, cell::UnsafeCell, cmp::Ordering, fmt::Display};
 
 use crate::hugepage_backed_table::InPlaceInitializable;
 #[cfg(target_feature = "avx2")]
 use crate::str_cmp_x86::inline_str_eq_foreign_str;
+use crate::util::likely;
 
 const MAX_STRING_LEN: usize = 50;
 const STRING_STORAGE_LEN: usize = 52;
 const INLINE_STRING_SIZE: usize = std::mem::size_of::<InlineString>();
 
 #[repr(C, align(8))]
-#[derive(Clone)]
 pub struct InlineString {
-  bytes: [u8; STRING_STORAGE_LEN],
-  len: u32,
+  bytes: UnsafeCell<[u8; STRING_STORAGE_LEN]>,
+  len: AtomicU32,
 }
 
 impl InlineString {
+  const INITIALIZING_RESERVED_LEN: u32 = u32::MAX;
+
   #[cfg(test)]
   pub fn new(contents: &str) -> Self {
-    let mut s = Self::default();
-    s.initialize(contents);
+    let s = Self::default();
+    Self::memcpy_no_libc(unsafe { &mut *s.bytes.get() }, contents);
+    s.len.store(contents.len() as u32, AtomicOrdering::Relaxed);
     s
+  }
+
+  fn bytes(&self) -> &[u8; STRING_STORAGE_LEN] {
+    unsafe { &*self.bytes.get() }
   }
 
   pub fn is_empty(&self) -> bool {
@@ -28,11 +36,7 @@ impl InlineString {
   }
 
   pub fn len(&self) -> usize {
-    self.len as usize
-  }
-
-  pub fn is_default(&self) -> bool {
-    self.is_empty()
+    self.len.load(AtomicOrdering::Relaxed) as usize
   }
 
   /// Performs a memcpy from contents to self.value() without calling
@@ -45,45 +49,83 @@ impl InlineString {
     }
   }
 
+  pub fn initialized(&self) -> bool {
+    let len = self.len.load(AtomicOrdering::Acquire);
+    len != 0 && len != Self::INITIALIZING_RESERVED_LEN
+  }
+
   pub fn value_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(self.value()) }
   }
 
   pub fn value(&self) -> &[u8] {
-    unsafe { self.bytes.get_unchecked(..self.len()) }
+    unsafe { self.bytes().get_unchecked(..self.len()) }
   }
 
   fn cmp_slice(&self) -> &[u8; INLINE_STRING_SIZE] {
     unsafe { &*(self as *const Self as *const [u8; INLINE_STRING_SIZE]) }
   }
 
-  pub fn initialize(&mut self, contents: &str) {
-    debug_assert!(
-      contents.len() <= MAX_STRING_LEN,
-      "{} > {}",
-      contents.len(),
-      MAX_STRING_LEN
-    );
-    Self::memcpy_no_libc(&mut self.bytes, contents);
-    self.len = contents.len() as u32;
+  fn memcpy_no_libc_under_lock(&self, contents: &str) {
+    debug_assert_eq!(self.len() as u32, Self::INITIALIZING_RESERVED_LEN);
+    Self::memcpy_no_libc(unsafe { &mut *self.bytes.get() }, contents);
+  }
+
+  fn initialize_contents_under_lock(&self, contents: &str) {
+    debug_assert!(contents.len() <= MAX_STRING_LEN,);
+    self.memcpy_no_libc_under_lock(contents);
   }
 
   #[cfg(target_feature = "avx2")]
-  pub fn eq_foreign_str(&self, other: &str) -> bool {
+  fn eq_foreign_str(&self, other: &str) -> bool {
+    debug_assert!(self.initialized());
     inline_str_eq_foreign_str(self, other)
   }
 
   #[cfg(not(target_feature = "avx2"))]
-  pub fn eq_foreign_str(&self, other: &str) -> bool {
+  fn eq_foreign_str(&self, other: &str) -> bool {
+    debug_assert!(self.initialized());
     self.value_str() == other
+  }
+
+  fn wait_until_initialized(&self) {
+    while self.len.load(AtomicOrdering::Acquire) == Self::INITIALIZING_RESERVED_LEN {
+      std::hint::spin_loop();
+    }
+  }
+
+  pub fn eq_or_initialize(&self, station: &str) -> bool {
+    if likely(self.initialized()) {
+      return likely(self.eq_foreign_str(station));
+    }
+
+    let prev_len = self
+      .len
+      .swap(Self::INITIALIZING_RESERVED_LEN, AtomicOrdering::Acquire);
+    if prev_len == 0 {
+      self.initialize_contents_under_lock(station);
+      self
+        .len
+        .store(station.len() as u32, AtomicOrdering::Release);
+      return true;
+    } else if prev_len == Self::INITIALIZING_RESERVED_LEN {
+      self.wait_until_initialized();
+    } else {
+      // We accidentally overwrite the length with INITIALIZING_RESERVED_LEN,
+      // restore the length:
+      self.len.store(prev_len, AtomicOrdering::Relaxed);
+    }
+
+    self.eq_foreign_str(station)
   }
 }
 
 impl Default for InlineString {
   fn default() -> Self {
     Self {
-      bytes: [0; STRING_STORAGE_LEN],
-      len: 0,
+      bytes: UnsafeCell::new([0; STRING_STORAGE_LEN]),
+      #[cfg(feature = "multithreaded")]
+      len: AtomicU32::new(0),
     }
   }
 }
@@ -123,7 +165,7 @@ impl Display for InlineString {
 impl InPlaceInitializable for InlineString {
   fn initialize(&mut self) {
     // No need to do anything, a zero-initialized string is correctly initialized.
-    debug_assert!(self.bytes.iter().all(|b| *b == 0));
+    debug_assert!(self.bytes().iter().all(|b| *b == 0));
     debug_assert_eq!(self.len(), 0);
   }
 }
@@ -155,7 +197,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str2.as_bytes()[..4]).unwrap());
     expect_true!(i1 == i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Equal]);
-    expect_eq!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_eq!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
@@ -165,7 +207,7 @@ mod tests {
     let i2 = InlineString::new(str::from_utf8(&str1.as_bytes()[..5]).unwrap());
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
@@ -176,13 +218,13 @@ mod tests {
     let i2 = InlineString::new(str2);
     expect_true!(i1 != i2);
     expect_that!(i1.cmp(&i2), pat![Ordering::Less]);
-    expect_ne!(str_hash(&i1.bytes), str_hash(&i2.bytes));
+    expect_ne!(str_hash(i1.bytes()), str_hash(i2.bytes()));
   }
 
   #[gtest]
   fn test_eq_hash_with_u8_slice() {
     expect_eq!(
-      str_hash(&InlineString::new("word").bytes),
+      str_hash(InlineString::new("word").bytes()),
       str_hash("word".as_bytes())
     );
   }

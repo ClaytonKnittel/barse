@@ -6,7 +6,7 @@ pub const HASH_BITS: u32 = 20;
 pub const TABLE_SIZE: usize = 1 << HASH_BITS;
 
 #[cfg(feature = "multithreaded")]
-pub const HASH_MAGIC: u64 = 0x1000800400002;
+pub const HASH_MAGIC: u64 = 0x10000200400002;
 #[cfg(not(feature = "multithreaded"))]
 pub const HASH_MAGIC: u64 = 0x800400001001;
 
