@@ -32,7 +32,7 @@ impl InlineString {
   }
 
   pub fn is_default(&self) -> bool {
-    self.len() == 0
+    self.is_empty()
   }
 
   /// Performs a memcpy from contents to self.value() without calling
