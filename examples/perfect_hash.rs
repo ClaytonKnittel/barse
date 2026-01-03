@@ -38,11 +38,9 @@ fn mask_above(v: u128, len: usize) -> u128 {
   v & 1u128.unbounded_shl(8 * len.min(16) as u32).wrapping_sub(1)
 }
 
-fn entropy(stations: &[String], mask: u128) -> f32 {
+fn entropy(stations: &[u128], mask: u128) -> f32 {
   let mut set = HashMap::<u128, u32>::new();
-  for station in stations {
-    let v = unsafe { read_unaligned(station.as_ptr() as *const u128) };
-    let v = mask_above(v, station.len());
+  for v in stations {
     let v = v & mask;
 
     *set.entry(v).or_default() += 1;
@@ -67,7 +65,7 @@ impl Ord for F32Ord {
   }
 }
 
-fn find_bits(stations: &[String]) -> u128 {
+fn highest_entropy_mask(stations: &[u128]) -> u128 {
   const TABLE_BITS: u32 = 17;
 
   let mut rng = rng();
@@ -114,6 +112,18 @@ fn find_bits(stations: &[String]) -> u128 {
   }
 
   bits
+}
+
+fn find_bits(stations: &[String]) -> u128 {
+  let station_vals = stations
+    .iter()
+    .map(|station| {
+      let v = unsafe { read_unaligned(station.as_ptr() as *const u128) };
+      mask_above(v, station.len())
+    })
+    .collect_vec();
+
+  highest_entropy_mask(&station_vals)
 }
 
 fn run() -> BarseResult {
