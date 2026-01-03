@@ -95,18 +95,33 @@ fn compress(mut x: u128, mut m: u128) -> u128 {
   x
 }
 
+fn mul_hi(a: u64, b: u64) -> u64 {
+  ((a as u128 * b as u128) >> 64) as u64
+}
+
+fn scramble_u128(v: u128) -> u128 {
+  const P1: u64 = 0xb8bf34e5043f1aca;
+  const P2: u64 = 0x46602dbc434ec010;
+  let x1 = mul_hi(v as u64, P1);
+  let x2 = mul_hi((v >> 64) as u64, P2);
+  (x1 as u128) + ((x2 as u128) << 64)
+}
+
 fn entropy_hash(bytes: &str) -> u64 {
   // const EXTRACT_MASK: u64 = 0x0101050c0d0c0c0d;
-  // const EXTRACT_MASK: u128 = 0x00000000000000010101050c0d0c0c0d;
-  const EXTRACT_MASK: u128 = 0x00000000000000040005040d0c0d0c0d;
+  // const EXTRACT_MASK: u128 = 0x00000000000000040405090d0d0d0c1c;
+  // const EXTRACT_MASK: u128 = 0x00000000000000040005040d0c0d0c0d;
+  const EXTRACT_MASK: u128 = 0x0000000000000000000000120a0e0f96;
   let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
   let v = mask_above(v, bytes.len()) as u128;
+  let v = scramble_u128(v);
   compress(v, EXTRACT_MASK) as u64
 }
 
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
-  const CAP: usize = 131072;
+  const TABLE_BITS: u32 = 15;
+  const CAP: usize = 1 << TABLE_BITS;
 
   const BELOW: usize = 32;
   println!(

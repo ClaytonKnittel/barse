@@ -8,7 +8,7 @@ use std::{
 
 use barse::error::{BarseError, BarseResult};
 use itertools::Itertools;
-use rand::{rng, seq::SliceRandom};
+use rand::{rng, seq::SliceRandom, RngCore};
 
 fn all_weather_stations(path: &str) -> BarseResult<Vec<String>> {
   Ok(
@@ -66,7 +66,7 @@ impl Ord for F32Ord {
 }
 
 fn highest_entropy_mask(stations: &[u128]) -> u128 {
-  const TABLE_BITS: u32 = 17;
+  const TABLE_BITS: u32 = 15;
 
   let mut rng = rng();
   let mut bits = u128::MAX;
@@ -98,10 +98,10 @@ fn highest_entropy_mask(stations: &[u128]) -> u128 {
       })
       .unwrap();
     bits &= !(1 << to_remove);
-    println!(
-      "Removed bit {to_remove}, entropy now: {}",
-      entropy(stations, bits)
-    );
+    // println!(
+    //   "Removed bit {to_remove}, entropy now: {}",
+    //   entropy(stations, bits)
+    // );
     order.swap_remove(
       order
         .iter()
@@ -114,7 +114,16 @@ fn highest_entropy_mask(stations: &[u128]) -> u128 {
   bits
 }
 
-fn find_bits(stations: &[String]) -> u128 {
+fn mul_hi(a: u64, b: u64) -> u64 {
+  ((a as u128 * b as u128) >> 64) as u64
+}
+
+fn scramble(v: u128) -> u128 {
+  let v = v ^ (v >> 17);
+  v ^ (v >> 29)
+}
+
+fn find_bits(stations: &[String]) {
   let station_vals = stations
     .iter()
     .map(|station| {
@@ -123,14 +132,36 @@ fn find_bits(stations: &[String]) -> u128 {
     })
     .collect_vec();
 
-  highest_entropy_mask(&station_vals)
+  let mut highest_entropy = f32::MIN;
+  for _ in 0..32 {
+    let mut rng = rng();
+    let rand_p1 = rng.next_u64();
+    let rand_p2 = rng.next_u64();
+    let scrambled_stations = station_vals
+      .iter()
+      .map(|&station| {
+        let x1 = mul_hi(station as u64, rand_p1);
+        let x2 = mul_hi((station >> 64) as u64, rand_p2);
+        (x1 as u128) + ((x2 as u128) << 64)
+      })
+      .collect_vec();
+
+    let mask = highest_entropy_mask(&scrambled_stations);
+    let e = entropy(&scrambled_stations, mask);
+    if e > highest_entropy {
+      println!(
+    "(p1 = {rand_p1:016x}, p2 = {rand_p2:016x}): mask = {mask:032x} ({} bits set) - entropy = {e}",
+    mask.count_ones()
+  );
+      highest_entropy = e;
+    }
+  }
 }
 
 fn run() -> BarseResult {
   let weather_stations = all_weather_stations("data/weather_stations.csv")?;
 
-  let bits = find_bits(&weather_stations);
-  println!("Bits: {bits:032x} ({} set)", bits.count_ones());
+  find_bits(&weather_stations);
 
   Ok(())
 }
