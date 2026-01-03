@@ -75,6 +75,35 @@ fn new_hash(bytes: &str) -> u64 {
   scramble_u64(v)
 }
 
+fn compress(mut x: u128, mut m: u128) -> u128 {
+  x &= m; // Clear irrelevant bits.
+  let mut mk = !m << 1; // We will count 0's to right.
+  for i in 0..7 {
+    let mp = mk ^ (mk << 1); // Parallel suffix.
+    let mp = mp ^ (mp << 2);
+    let mp = mp ^ (mp << 4);
+    let mp = mp ^ (mp << 8);
+    let mp = mp ^ (mp << 16);
+    let mp = mp ^ (mp << 32);
+    let mp = mp ^ (mp << 64);
+    let mv = mp & m; // Bits to move.
+    m = m ^ mv | (mv >> (1 << i)); // Compress m.
+    let t = x & mv;
+    x = x ^ t | (t >> (1 << i)); // Compress x.
+    mk &= !mp;
+  }
+  x
+}
+
+fn entropy_hash(bytes: &str) -> u64 {
+  // const EXTRACT_MASK: u64 = 0x0101050c0d0c0c0d;
+  // const EXTRACT_MASK: u128 = 0x00000000000000010101050c0d0c0c0d;
+  const EXTRACT_MASK: u128 = 0x00000000000000040005040d0c0d0c0d;
+  let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
+  let v = mask_above(v, bytes.len()) as u128;
+  compress(v, EXTRACT_MASK) as u64
+}
+
 fn run() -> BarseResult {
   let weather_stations = weather_stations("data/weather_stations.csv")?;
   const CAP: usize = 131072;
@@ -125,6 +154,11 @@ fn run() -> BarseResult {
   println!(
     "New hash quality: {}",
     compute_hash_quality(&weather_stations, |station| { new_hash(station) }, CAP)
+  );
+
+  println!(
+    "Entropy hash quality: {}",
+    compute_hash_quality(&weather_stations, |station| { entropy_hash(station) }, CAP)
   );
   Ok(())
 }

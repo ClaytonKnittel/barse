@@ -1,5 +1,5 @@
 use std::{
-  collections::{HashMap, HashSet},
+  collections::HashMap,
   fs::File,
   io::{BufRead, BufReader},
   process::ExitCode,
@@ -38,33 +38,79 @@ fn mask_above(v: u128, len: usize) -> u128 {
   v & 1u128.unbounded_shl(8 * len.min(16) as u32).wrapping_sub(1)
 }
 
-fn unique_with_mask(stations: &[String], mask: u128) -> bool {
-  let mut set = HashSet::new();
+fn entropy(stations: &[String], mask: u128) -> f32 {
+  let mut set = HashMap::<u128, u32>::new();
   for station in stations {
     let v = unsafe { read_unaligned(station.as_ptr() as *const u128) };
     let v = mask_above(v, station.len());
     let v = v & mask;
 
-    if !set.insert(v) {
-      return false;
-    }
+    *set.entry(v).or_default() += 1;
   }
 
-  true
+  set
+    .into_values()
+    .map(|count| count as f32 / stations.len() as f32)
+    .map(|p| -p * p.log2())
+    .sum()
+}
+
+#[derive(PartialEq, PartialOrd)]
+struct F32Ord(f32);
+
+impl Eq for F32Ord {}
+
+#[allow(clippy::derive_ord_xor_partial_ord)]
+impl Ord for F32Ord {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.0.partial_cmp(&other.0).unwrap()
+  }
 }
 
 fn find_bits(stations: &[String]) -> u128 {
+  const TABLE_BITS: u32 = 17;
+
   let mut rng = rng();
   let mut bits = u128::MAX;
 
-  debug_assert!(unique_with_mask(stations, bits));
   let mut order = (0..u128::BITS).collect_vec();
-  order.shuffle(&mut rng);
-  for bit in order {
-    let mask = bits & !(1 << bit);
-    if unique_with_mask(stations, mask) {
-      bits = mask;
-    }
+  let cur_entropy = entropy(stations, bits);
+
+  // Remove the obviously unhelpful bits.
+  order
+    .extract_if(.., |&mut bit| {
+      let mask = bits & !(1 << bit);
+      if entropy(stations, mask) >= cur_entropy - 0.01 {
+        bits = mask;
+        true
+      } else {
+        false
+      }
+    })
+    .count();
+
+  while order.len() > TABLE_BITS as usize {
+    order.shuffle(&mut rng);
+    let to_remove = order
+      .iter()
+      .cloned()
+      .max_by_key(|&bit| {
+        let mask = bits & !(1 << bit);
+        F32Ord(entropy(stations, mask))
+      })
+      .unwrap();
+    bits &= !(1 << to_remove);
+    println!(
+      "Removed bit {to_remove}, entropy now: {}",
+      entropy(stations, bits)
+    );
+    order.swap_remove(
+      order
+        .iter()
+        .find_position(|&&bit| bit == to_remove)
+        .unwrap()
+        .0,
+    );
   }
 
   bits
