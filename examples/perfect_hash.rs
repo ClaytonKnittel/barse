@@ -7,6 +7,8 @@ use std::{
 };
 
 use barse::error::{BarseError, BarseResult};
+use itertools::Itertools;
+use rand::{rng, seq::SliceRandom};
 
 fn all_weather_stations(path: &str) -> BarseResult<Vec<String>> {
   Ok(
@@ -52,10 +54,13 @@ fn unique_with_mask(stations: &[String], mask: u128) -> bool {
 }
 
 fn find_bits(stations: &[String]) -> u128 {
+  let mut rng = rng();
   let mut bits = u128::MAX;
 
   debug_assert!(unique_with_mask(stations, bits));
-  for bit in 0..u128::BITS {
+  let mut order = (0..u128::BITS).collect_vec();
+  order.shuffle(&mut rng);
+  for bit in order {
     let mask = bits & !(1 << bit);
     if unique_with_mask(stations, mask) {
       bits = mask;
