@@ -98,10 +98,10 @@ fn highest_entropy_mask(stations: &[u128]) -> u128 {
       })
       .unwrap();
     bits &= !(1 << to_remove);
-    // println!(
-    //   "Removed bit {to_remove}, entropy now: {}",
-    //   entropy(stations, bits)
-    // );
+    println!(
+      "Removed bit {to_remove}, entropy now: {}",
+      entropy(stations, bits)
+    );
     order.swap_remove(
       order
         .iter()
@@ -123,6 +123,19 @@ fn scramble(v: u128) -> u128 {
   v ^ (v >> 29)
 }
 
+fn super_scramble(v: u128, k: u128) -> u128 {
+  use std::arch::x86_64::*;
+
+  unsafe {
+    let v = _mm_load_si128(&v as *const u128 as *const __m128i);
+    let k = _mm_load_si128(&k as *const u128 as *const __m128i);
+    let x = std::arch::x86_64::_mm_aesenc_si128(v, k);
+    let xl = _mm_cvtsi128_si64(x) as u128;
+    let xh = _mm_cvtsi128_si64(_mm_unpackhi_epi64(x, x)) as u128;
+    xl + (xh << 64)
+  }
+}
+
 fn find_bits(stations: &[String]) {
   let station_vals = stations
     .iter()
@@ -135,25 +148,19 @@ fn find_bits(stations: &[String]) {
   let mut highest_entropy = f32::MIN;
   for _ in 0..32 {
     let mut rng = rng();
-    let rand_p1 = rng.next_u64();
-    let rand_p2 = rng.next_u64();
+    let k = rng.next_u64() as u128 + ((rng.next_u64() as u128) << 64);
     let scrambled_stations = station_vals
       .iter()
-      .map(|&station| scramble(station))
-      // .map(|&station| {
-      //   let x1 = mul_hi(station as u64, rand_p1);
-      //   let x2 = mul_hi((station >> 64) as u64, rand_p2);
-      //   (x1 as u128) + ((x2 as u128) << 64)
-      // })
+      .map(|&station| super_scramble(station, k))
       .collect_vec();
 
     let mask = highest_entropy_mask(&scrambled_stations);
     let e = entropy(&scrambled_stations, mask);
     if e > highest_entropy {
       println!(
-    "(p1 = {rand_p1:016x}, p2 = {rand_p2:016x}): mask = {mask:032x} ({} bits set) - entropy = {e}",
-    mask.count_ones()
-  );
+        "(k = {k:032x}): mask = {mask:032x} ({} bits set) - entropy = {e}",
+        mask.count_ones()
+      );
       highest_entropy = e;
     }
   }

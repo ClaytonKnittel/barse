@@ -112,14 +112,27 @@ fn scramble_g(v: u128) -> u128 {
   v ^ (v >> 29)
 }
 
+fn super_scramble(v: u128, k: u128) -> u128 {
+  use std::arch::x86_64::*;
+
+  unsafe {
+    let v = _mm_load_si128(&v as *const u128 as *const __m128i);
+    let k = _mm_load_si128(&k as *const u128 as *const __m128i);
+    let x = std::arch::x86_64::_mm_aesenc_si128(v, k);
+    let xl = _mm_cvtsi128_si64(x) as u128;
+    let xh = _mm_cvtsi128_si64(_mm_unpackhi_epi64(x, x)) as u128;
+    xl + (xh << 64)
+  }
+}
+
 fn entropy_hash(bytes: &str) -> u64 {
   // const EXTRACT_MASK: u64 = 0x0101050c0d0c0c0d;
   // const EXTRACT_MASK: u128 = 0x00000000000000040405090d0d0d0c1c;
   // const EXTRACT_MASK: u128 = 0x00000000000000040005040d0c0d0c0d;
-  const EXTRACT_MASK: u128 = 0x0000000000000000000000140d171d1c;
+  const EXTRACT_MASK: u128 = 0x1a0000001600000169000000f8000000;
   let v = unsafe { read_unaligned(bytes.as_ptr() as *const u128) };
   let v = mask_above(v, bytes.len()) as u128;
-  let v = scramble_g(v);
+  let v = super_scramble(v, 0xc949fa2e49718fdca89bf476f3b9c428);
   compress(v, EXTRACT_MASK) as u64
 }
 
