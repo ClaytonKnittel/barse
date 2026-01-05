@@ -40,6 +40,8 @@ Nardò;9.8
 Temperature readings range from -99.9 to 99.9, always with one fractional digit. Station names contain valid UTF-8
 characters, spanning 2 - 50 bytes.
 
+The input file will contain 1 billion rows, and has a maximum of 10,000 unique station names.
+
 ### File MMap
 
 The file is direcly mmap-ed into memory and read from sequentially. I refer to this region of memory as the "file
@@ -114,6 +116,61 @@ I was able to find a magic number for `N = 13` (e.g. an 8192-entry table) using 
     right-shift 51 bits (lookup table index):  0x00_00_00_00_00_00_15_22 (base 10: 5410)
 
 This algorithm has ~18 cycles of latency on my Intel Raptorlake CPU: [godbolt](https://godbolt.org/z/nqs33nq8Y).
+
+### Weather Station Table - Map of station names to temperature summaries
+
+The next step after finding the boundaries of the weather station name string in the file buffer and parsing the
+temperature reading is to lookup the weather station in a map and update its temperature summary.
+
+The temperature summary map is a power-of-two sized hash table that uses linear probing on hash collision.
+
+The layout of the temperature summary map is different in single-threaded mode and multi-threaded mode.
+
+#### Single-threaded layout
+
+The table consists of an array of pairs of weather station names and tempearture summaries. The weather station names
+are inlined, meaning these entries have no indirection and reference no separately allocated memory. This means we will
+typically only incur one L1 cache miss to load the table entry for string comparison and temperature summary updating.
+
+#### Multi-threaded layout
+
+There is a single shared table consisting only of weather station names, and each thread has their own array of
+temperature summaries. The index of a station in the shared table corresponds with the index of that station's
+temperature summary in each thread's local temperature summary map.
+
+Since there are far fewer unique station names than records in the input file (10k vs. 1 billion), insertions of new
+station names should be uncommon, and happen mostly at the beginning of parsing as the tables are warming up. For the
+majority of the program's lifetime, the table already contains all stations that will be seen, and every lookup is a
+hit.
+
+#### Synchronization of the Shared String Map
+
+We can synchronize the shared string table using a simple spin-locking mechanism to initialize string keys when they are
+newly inserted. Entries in the shared string table will have three states: empty, initializing, and initialized. We will
+co-opt the length of the string to hold this state: 0 for uninitialized, -1 for initializing, and the actual string
+length (some positive number) for initialized.
+
+When a thread encounters an empty bucket while probing, it atomically swaps the length for -1. If the previous value of
+the length was 0, then this thread has successfully claimed the bucket for the key it had looked up. It copies the
+station name into the bucket, then atomically writes the length with `release` memory ordering.
+
+When a thread encounters an `initializing` bucket, either by reading its length as -1 while probing, or by seeing a
+previous value of -1 when attempting to claim the bucket for the key it is looking up, it needs to spin until the state
+moves to `initialized`.
+
+Once a bucket is `initialized`, its string contents have been written and will never be changed. This means threads can
+do un-synchronized string comparison against this value if they see that the bucket is in the initialized state. This is
+the common case, and the only synchronization required is an atomic load of the bucket state with `acquire` memory
+ordering.
+
+#### Per-thread Temperature Summary Arrays
+
+Each thread holds their own array of temperature summaries corresponding to each weather station. The temperature
+summary records the min/max/total/count of temperature readings seen for a particular station. Since updating these in
+memory shared with other threads would require complicated and expensive synchronization mechanisms, duplication is the
+better option. The temperature summaries are aggregated after all threads have finished executing.
+
+### String Hashing
 
 [^temp_mask]: With a clever observation, you can get away with only one conditional move when constructing this mask.
   See `TemperatureReading::u64_encoding_to_self`.
