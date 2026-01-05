@@ -124,6 +124,8 @@ temperature reading is to lookup the weather station in a map and update its tem
 
 The temperature summary map is a power-of-two sized hash table that uses linear probing on hash collision.
 
+The memory backing the tables is `mmap`ped directly from the OS, and backed by hugepages on systems that support it.
+
 The layout of the temperature summary map is different in single-threaded mode and multi-threaded mode.
 
 #### Single-threaded layout
@@ -172,6 +174,41 @@ better option. The temperature summaries are aggregated after all threads have f
 
 ### String Hashing
 
+The string hashing algorithm is tuned for the set of weather station names in `data/weather_stations.csv`. This does not
+affect the correctness of the program on arbitrary input, but does improve performance when the input file is generated
+from that list.
+
+The string hash is a balance of efficiency and quality. I found that using only the first 8 characters of the station
+name is not sufficient for a high quality hash, since many weather station names share a common prefix (e.g. "College
+...").
+
+The input to the hash function is a `&str` returned from the `Scanner`, which contains a pointer to the start of the
+string and a length. We do an unaligned load of 16 bytes into an `xmm` register from the start of the string (with a
+fallback if this read would cross a page boundary, to prevent segfaulting) and mask off the bytes past the end of the
+string[^str_mask].
+
+The hash itself is computed by `xor`-ing the two halves of the 128-bit value into a u64, then applying a
+multiply-rightshift similar to the perfect hashing scheme used for temperature parsing. However, in this case we are not
+going for perfect hashing, as finding a perfect hash for a reasonably-sized table is extremely difficult with a key set
+of ~45k (unique weather station names). Instead, we chose a fixed size for the hash table (determined via
+experimentation), and we do an exhaustive search over all u64 values with exactly 4 bits set for the magic value. We use
+the magic value that has the lowest average probing distance across random samples of 10k keys from the full data set.
+
+#### Table sizes
+
+In single-threaded mode, the table size that had the best performance was 1 << 20 (~1 million) entries. The size of this
+table is 72 MB, which is about 3x larger than the L2 cache on my computer. The average probing distance is ~1.04,
+meaning ~95% of lookups find the key in the first bucket they search.
+
+In multi-threaded mode, the overhead per-entry in the table is much larger, since there is a copy of the temperature
+summaries table per thread. The table size that had the best performance was 1 << 15 (~65k) entries. This was tuned for
+a 32-thread workload. The size of this table is 35.5MB, half the size of the single-threaded table. The average probing
+distance is ~1.3, much higher than the single-threaded workload. This shows that the memory working set size is much
+more constraining in a multithreaded environment than compute, relative to single-threaded.
+
 [^temp_mask]: With a clever observation, you can get away with only one conditional move when constructing this mask.
   See `TemperatureReading::u64_encoding_to_self`.
+[^str_mask]: Computing this mask can be cheap even for wide registers that don't support register-wide bit shifts. The
+  trick is to read from a static array at an offset determined by the length of the string. See `mask_char_and_above` in
+  `src/str_cmp_x86.rs`.
 
