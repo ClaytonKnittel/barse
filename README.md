@@ -56,7 +56,7 @@ temperature readins in that 64-byte region, meaning the locations of newlines/se
 These bitmasks are used to efficiently compute the boundaries of the station name and find the start pointer of the
 temperature reading to pass to the temperature reading parser.
 
-### Parsing Temperature Readings
+### Parsing Temperature Readings - Perfect Hashing
 
 As stated above, tempearture readings range from -99.9 to 99.9, always with one fractional digit. This means temperature
 readings have 2001 unique values (so 2001 unique representations).
