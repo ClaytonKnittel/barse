@@ -79,6 +79,16 @@ temperature reading in the file buffer. The least-significant byte of this value
 first character of the temperature reading, and so on up to the newline character, and beyond (including the first few
 bytes of the weather station name on the following line, i.e. garbage).
 
+#### For example:
+| b'r' | b';' | b'8' | b'.' | b'3' | b'\n' | b'S' | ... |
+|---|---|---|---|---|---|---|---|
+
+`                ^ unaligned load address                `
+
+    // ASCII values of temperature reading digits in little-endian order:
+    //                   S  \n 3  .  8
+    temp_encoding: 0x..._53_0A_33_2E_38
+
 To remove the garbage bytes following the temperature reading, we can check particular bytes in the `u64` value for the
 newline character, and `cmov` a bitmask depending on where the newline character is. Then by masking the value with this
 bitmask, we will only be left with characters which are consistent for that particular temperature value regardless of
