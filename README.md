@@ -40,7 +40,7 @@ Nardò;9.8
 Temperature readings range from -99.9 to 99.9, always with one fractional digit. Station names contain valid UTF-8
 characters, spanning 2 - 50 bytes.
 
-### Scanner
+### Scanner - AVX for fast character search
 
 The implementation centers around the `Scanner` struct, which reads from the buffered file in 64-byte batches and records the
 locations of the ';' and '\n' characters in those 64 bytes.
