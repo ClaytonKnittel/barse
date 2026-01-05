@@ -40,14 +40,29 @@ Nardò;9.8
 Temperature readings range from -99.9 to 99.9, always with one fractional digit. Station names contain valid UTF-8
 characters, spanning 2 - 50 bytes.
 
+### File MMap
+
+The file is direcly mmap-ed into memory and read from sequentially. I refer to this region of memory as the "file
+buffer".
+
 ### Scanner - AVX for fast character search
 
-The implementation centers around the `Scanner` struct, which reads from the buffered file in 64-byte batches and records the
-locations of the ';' and '\n' characters in those 64 bytes.
+The implementation centers around the `Scanner` struct, which reads from the file buffer in 64-byte batches and records
+the locations of the ';' and '\n' characters in those 64 bytes.
 
-The scanner holds a pointer to the start of the current 64-byte region in view, two bitmasks of the locations of
-semicolon/newline characters in the 64-byte region, and the offset within the current 64-byte region in view of the
-start of the next line.
+The scanner holds a pointer to the start of the current 64-byte batch in view, two bitmasks of the locations of
+semicolon/newline characters in the batch, and the offset within the batch of the start of the next line to be processed
+from the file.
+
+#### For example:
+| b'.' | b'7' | b'\n' | b'D' | b'e' | b'n' | b'v' | b'e' | b'r' | b';' | b'8' | b'.' | b'3' | b'\n' | b'S' | b'a' | b'n' | ... |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+
+^ Pointer to buffer (points to the start of the current batch)
+
+    semicolon_mask: 0x..._00_40 (semicolon at index 6)
+    newline_mask: 0x..._04_00 (newline at index 10)
+    cur_offset: 3 (the next line to process starts at byte offset 3 in the current batch
 
 The bitmasks are constructed directly from the file buffer using two `vpmov` reads into 32-byte `ymm` registers,
 followed by `vpcmpeqb + vpmovmskb` on each. These masks are retained and used to efficiently compute the boundaries of
