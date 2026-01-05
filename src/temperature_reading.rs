@@ -106,6 +106,9 @@ impl TemperatureReading {
     Self { reading }
   }
 
+  /// Parses a temperature reading directly from the file buffer starting at
+  /// `str_ptr`. Requires that the temperature reading is followed by a newline
+  /// character.
   pub fn from_raw_ptr(str_ptr: *const u8) -> Self {
     let encoding = unsafe { read_unaligned(str_ptr as *const u64) }.to_le();
     Self::u64_encoding_to_self(encoding)

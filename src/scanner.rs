@@ -68,18 +68,18 @@ impl<'a> Scanner<'a> {
       unsafe { unreachable_unchecked() };
     }
 
-    let cur_offset = newline_mask.ilog2();
-    if cur_offset == BYTES_PER_BATCH as u32 - 1 {
+    let batch_offset = newline_mask.ilog2();
+    if batch_offset == BYTES_PER_BATCH as u32 - 1 {
       let buffer = &buffer[BYTES_PER_BATCH..];
       let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
       (buffer, semicolon_mask, newline_mask, 0)
     } else {
-      let remove_mask = !((2 << cur_offset) - 1);
+      let remove_mask = !((2 << batch_offset) - 1);
       (
         buffer,
         semicolon_mask & remove_mask,
         newline_mask & remove_mask,
-        cur_offset + 1,
+        batch_offset + 1,
       )
     }
   }
@@ -91,13 +91,13 @@ impl<'a> Scanner<'a> {
   pub fn from_midpoint<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len() >= BUFFER_OVERLAP);
     debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BATCH));
-    let (buffer, semicolon_mask, newline_mask, cur_offset) =
+    let (buffer, semicolon_mask, newline_mask, batch_offset) =
       Self::find_starting_point_in_overlap(buffer);
     Self {
       buffer,
       semicolon_mask,
       newline_mask,
-      batch_offset: cur_offset,
+      batch_offset,
     }
   }
 
@@ -207,7 +207,7 @@ impl<'a> Scanner<'a> {
     };
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
-    // Temporarily set cur_offset to the character past the semicolon - where
+    // Temporarily set batch_offset to the character past the semicolon - where
     // we expect to find the temperature reading for this weather station. It
     // will be used in `find_next_temp_reading` and later set to the start of
     // the next line.
@@ -231,8 +231,8 @@ impl<'a> Scanner<'a> {
   /// Reads the next batch of characters from the file for a temperature
   /// reading without a delimiting newline character in the current batch.
   /// This method simply calls `read_next_assuming_available_if_single_thread`
-  /// and sets `cur_offset` to the offset of the newline character read in from
-  /// the new batch.
+  /// and sets `batch_offset` to the offset of the newline character read in
+  /// from the new batch.
   #[must_use]
   fn refresh_batch_for_trailing_temp(&mut self) -> bool {
     if !self.read_next_assuming_available_if_single_thread() {
@@ -246,8 +246,24 @@ impl<'a> Scanner<'a> {
     true
   }
 
+  /// Slow fallback for parsing temperature readings from the buffer which
+  /// cross page boundaries. We have this fallback to avoid accidentally doing
+  /// an unaligned read past the end of the last page of the mmap region, which
+  /// would trigger a segfault.
+  ///
+  /// We know the temperature reading starts somewhere in the last 7 bytes of
+  /// the current buffer, since reading it into a u64 would cross a page
+  /// boundary.
+  ///
+  /// This method does an aligned 8-byte read of the last 8 bytes of the
+  /// current batch, and optionally another 8-byte read of the first 8 bytes of
+  /// the next batch if no newline character was found in the current batch.
+  /// Then the temperature encoding may be loaded into a u64 with an unaligned
+  /// read from this copied buffer.
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> Option<TemperatureReading> {
     debug_assert!(BYTES_PER_BATCH >= std::mem::size_of::<u64>());
+    // Offset in the current batch of the start of `temp_storage`, i.e. 8 bytes
+    // from the end of the current batch.
     const TMP_OFFSET: usize = BYTES_PER_BATCH - std::mem::size_of::<u64>();
     debug_assert!(
       (TMP_OFFSET..BYTES_PER_BATCH).contains(&(start_offset as usize)),
@@ -257,7 +273,15 @@ impl<'a> Scanner<'a> {
     let mut temp_storage = [0u64; 2];
     temp_storage[0] = unsafe { *(self.buffer.as_ptr().byte_add(TMP_OFFSET) as *const u64) };
 
+    // If there is no newline character following this temperature reading in
+    // the current batch, then we may read the next batch from the buffer.
     if self.newline_mask == 0 {
+      // Note that this method will always return `true` in singlethreaded
+      // mode, since every temperature reading is followed by a newline in
+      // valid input file formats.
+      //
+      // We have to check for EOF in multithreaded mode since each thread only
+      // processes a subsection of the file.
       if !self.refresh_batch_for_trailing_temp() {
         return None;
       }
@@ -271,15 +295,27 @@ impl<'a> Scanner<'a> {
     }))
   }
 
+  /// Finds and parses the next temperature reading from the buffer, returning
+  /// `None` if EOF was reached.
+  ///
+  /// Note that `None` is only possible as a return value in multithreaded
+  /// mode, when `buffer` may not span to the end of the file. In
+  /// singlethreaded mode, every semicolon must be followed by a temperature
+  /// reading + newline, so we can't possibly reach EOF in this method.
   fn find_next_temp_reading(&mut self) -> Option<TemperatureReading> {
     let start_offset = self.batch_offset;
+    // The pointer to the start of the temperature reading is the
+    // `batch_offset`, which was set in `find_next_station_name`.
     let temp_start_ptr = self.offset_to_ptr(start_offset);
-    let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
     // Slow path in case we are in danger of reading across a page boundary.
-    let reading = if unlikely(unaligned_read_would_cross_page_boundary::<u64>(start_ptr)) {
+    let reading = if unlikely(unaligned_read_would_cross_page_boundary::<u64>(
+      temp_start_ptr,
+    )) {
       self.parse_temp_from_copied_buffer(start_offset)?
     } else {
+      // The newline character following this temperature reading may not be in
+      // this batch. If it isn't load the next batch.
       if self.newline_mask == 0 && !self.refresh_batch_for_trailing_temp() {
         return None;
       }
@@ -287,7 +323,10 @@ impl<'a> Scanner<'a> {
       TemperatureReading::from_raw_ptr(temp_start_ptr)
     };
 
+    // The offset of the next line is one past the newline character following
+    // the temperature we just parsed.
     self.batch_offset = self.newline_mask.pop_lsb() + 1;
+
     Some(reading)
   }
 }
