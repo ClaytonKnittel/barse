@@ -1,4 +1,4 @@
-pub const BYTES_PER_BUFFER: usize = 16;
+pub const BYTES_PER_BATCH: usize = 16;
 
 pub fn read_next_from_buffer(buffer: &[u8]) -> (u64, u64) {
   let cache = unsafe { *(buffer.as_ptr() as *const u128) };

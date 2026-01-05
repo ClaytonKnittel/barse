@@ -6,9 +6,9 @@ use crate::{
 };
 
 #[cfg(not(target_feature = "avx2"))]
-use crate::scanner_cache::{read_next_from_buffer, BYTES_PER_BUFFER};
+use crate::scanner_cache::{read_next_from_buffer, BYTES_PER_BATCH};
 #[cfg(target_feature = "avx2")]
-use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BUFFER};
+use crate::scanner_cache_x86::{read_next_from_buffer, BYTES_PER_BATCH};
 
 const MAX_STATION_NAME_LEN: usize = 50;
 /// The amount of overlapping bytes between consecutive buffers in
@@ -17,9 +17,9 @@ pub const BUFFER_OVERLAP: usize = (MAX_STATION_NAME_LEN
   + std::mem::size_of_val(&b';')
   + MAX_TEMP_READING_LEN
   + std::mem::size_of_val(&b'\n'))
-.next_multiple_of(BYTES_PER_BUFFER);
+.next_multiple_of(BYTES_PER_BATCH);
 
-pub(crate) const SCANNER_CACHE_SIZE: usize = BYTES_PER_BUFFER;
+pub(crate) const SCANNER_CACHE_SIZE: usize = BYTES_PER_BATCH;
 
 /// Scans for alternating semicolons and newlines.
 pub struct Scanner<'a> {
@@ -29,24 +29,24 @@ pub struct Scanner<'a> {
 
   /// The offset of the previously-read newline character + 1, e.g. the
   /// starting point of the expected next weather station name.
-  cur_offset: u32,
+  batch_offset: u32,
 }
 
 impl<'a> Scanner<'a> {
   /// Constructs a Scanner over a buffer, which must be aligned to 32 bytes.
   pub fn from_start<'b: 'a>(buffer: &'b [u8]) -> Self {
-    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
+    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BATCH));
     let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
     Self {
       buffer,
       semicolon_mask,
       newline_mask,
-      cur_offset: 0,
+      batch_offset: 0,
     }
   }
 
   /// Finds the point we should start iterating from, assuming the first
-  /// `BUFFER_OVERLAP` bytes are overlapping with the previous buffer. We
+  /// `BUFFER_OVERLAP` bytes are overlapping with the previous batch. We
   /// choose to start iterating after the last newline character found in the
   /// overlap region, since this is naturally where the scanner iterating over
   /// the previous slice would stop.
@@ -54,7 +54,7 @@ impl<'a> Scanner<'a> {
     let (mut semicolon_mask, mut newline_mask) = read_next_from_buffer(buffer);
     let mut buffer_offset = 0;
     #[allow(clippy::reversed_empty_ranges)]
-    for offset in (BYTES_PER_BUFFER..BUFFER_OVERLAP).step_by(BYTES_PER_BUFFER) {
+    for offset in (BYTES_PER_BATCH..BUFFER_OVERLAP).step_by(BYTES_PER_BATCH) {
       let (next_semicolon_mask, next_newline_mask) = read_next_from_buffer(&buffer[offset..]);
       if next_newline_mask != 0 {
         buffer_offset = offset;
@@ -69,8 +69,8 @@ impl<'a> Scanner<'a> {
     }
 
     let cur_offset = newline_mask.ilog2();
-    if cur_offset == BYTES_PER_BUFFER as u32 - 1 {
-      let buffer = &buffer[BYTES_PER_BUFFER..];
+    if cur_offset == BYTES_PER_BATCH as u32 - 1 {
+      let buffer = &buffer[BYTES_PER_BATCH..];
       let (semicolon_mask, newline_mask) = read_next_from_buffer(buffer);
       (buffer, semicolon_mask, newline_mask, 0)
     } else {
@@ -90,23 +90,22 @@ impl<'a> Scanner<'a> {
   /// previous slice.
   pub fn from_midpoint<'b: 'a>(buffer: &'b [u8]) -> Self {
     debug_assert!(buffer.len() >= BUFFER_OVERLAP);
-    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BUFFER));
+    debug_assert!(buffer.len().is_multiple_of(BYTES_PER_BATCH));
     let (buffer, semicolon_mask, newline_mask, cur_offset) =
       Self::find_starting_point_in_overlap(buffer);
     Self {
       buffer,
       semicolon_mask,
       newline_mask,
-      cur_offset,
+      batch_offset: cur_offset,
     }
   }
 
-  /// Reads in the next `BYTES_PER_BUFFER` bytes from the buffer and updates
-  /// the semicolon/newline bitmasks. This method assumes that we are not at
-  /// the end of the file.
+  /// Reads in the next batch from the buffer and updates the semicolon/newline
+  /// bitmasks. This method assumes that we are not at the end of the file.
   fn read_next_assuming_available(&mut self) {
-    debug_assert!(self.buffer.len() > BYTES_PER_BUFFER);
-    self.buffer = unsafe { self.buffer.get_unchecked(BYTES_PER_BUFFER..) };
+    debug_assert!(self.buffer.len() > BYTES_PER_BATCH);
+    self.buffer = unsafe { self.buffer.get_unchecked(BYTES_PER_BATCH..) };
     let (semicolon_mask, newline_mask) = read_next_from_buffer(self.buffer);
     self.semicolon_mask = semicolon_mask;
     self.newline_mask = newline_mask;
@@ -123,9 +122,9 @@ impl<'a> Scanner<'a> {
   }
   /// In single threaded mode, the end of the buffer is the end of the file, so
   /// we can assume there is a newline following every semicolon. If the
-  /// current buffer has a semicolon near the end but no newline following, we
-  /// know there must be at least one more buffer's worth of contents
-  /// remaining. Otherwise the file format would be invalid.
+  /// current batch has a semicolon near the end but no newline following, we
+  /// know there must be at least one more batch's worth of contents remaining.
+  /// Otherwise the file format would be invalid.
   #[must_use]
   #[cfg(not(feature = "multithreaded"))]
   fn read_next_assuming_available_if_single_thread(&mut self) -> bool {
@@ -133,25 +132,26 @@ impl<'a> Scanner<'a> {
     true
   }
 
-  /// Reads the next `BYTES_PER_BUFFER` bytes from the buffer, updating the
-  /// internal state of `self` and returning `true` if there were more bytes to
-  /// read, or returning `false` if EOF was reached.
+  /// Reads the next batch of `BYTES_PER_BATCH` bytes from the buffer, updating
+  /// the internal state of `self` and returning `true` if there were more
+  /// bytes to read, or returning `false` if EOF was reached.
   #[must_use]
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
-    if self.buffer.len() == BYTES_PER_BUFFER {
+    if self.buffer.len() == BYTES_PER_BATCH {
       return false;
     }
     self.read_next_assuming_available();
     true
   }
 
+  /// Translates a byte offset from the start of `buffer` to a pointer.
   fn offset_to_ptr(&self, offset: u32) -> *const u8 {
-    debug_assert!(offset <= BYTES_PER_BUFFER as u32);
+    debug_assert!(offset <= BYTES_PER_BATCH as u32);
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
-  /// Reads bytes from the buffer into the cache while no newline characters
+  /// Reads batches from the buffer into the cache while no newline characters
   /// are in the cache, returning `true` if a newline character was eventually
   /// found. `false` indicates EOF was reached.
   #[must_use]
@@ -164,14 +164,14 @@ impl<'a> Scanner<'a> {
 
     // The next semicolon must be found within the next MAX_STATION_NAME_LEN +
     // 1 bytes. In the worst case, the previous newline was the last character
-    // of the previous buffer, and the read_next call we just performed read
-    // the first `Cache::BYTES_PER_BUFFER` bytes of the next station name.
+    // of the previous batch, and the read_next call we just performed read
+    // the first `Cache::BYTES_PER_BATCH` bytes of the next station name.
     // This means we may not find the next semicolon until
-    // `MAX_STATION_NAME_LEN + 1 - Cache::bytes_per_buffer` more bytes have
+    // `MAX_STATION_NAME_LEN + 1 - Cache::BYTES_PER_BATCH` more bytes have
     // been read.
     const MAX_ITERS: usize = (MAX_STATION_NAME_LEN + 1)
-      .saturating_sub(BYTES_PER_BUFFER)
-      .div_ceil(BYTES_PER_BUFFER);
+      .saturating_sub(BYTES_PER_BATCH)
+      .div_ceil(BYTES_PER_BATCH);
     #[allow(clippy::reversed_empty_ranges)]
     for _ in 0..MAX_ITERS {
       if self.semicolon_mask != 0 {
@@ -187,14 +187,14 @@ impl<'a> Scanner<'a> {
   /// next line to process. Returns `None` if EOF was reached.
   fn find_next_station_name(&mut self) -> Option<&'a str> {
     // Pointer to the start of the next station name.
-    let station_start = self.offset_to_ptr(self.cur_offset);
+    let station_start = self.offset_to_ptr(self.batch_offset);
     if !self.read_until_next_semicolon() {
       return None;
     }
 
     debug_assert!(
       self.semicolon_mask != 0,
-      "Expected non-empty semicolon mask after refreshing buffers in iteration"
+      "Expected non-empty semicolon mask after refreshing batches in iteration"
     );
     let semicolon_offset = self.semicolon_mask.pop_lsb();
 
@@ -207,12 +207,18 @@ impl<'a> Scanner<'a> {
     };
     let station_name = unsafe { str::from_utf8_unchecked(station_name_slice) };
 
-    self.cur_offset = semicolon_offset + 1;
-    if semicolon_offset == BYTES_PER_BUFFER as u32 - 1 {
+    // Temporarily set cur_offset to the character past the semicolon - where
+    // we expect to find the temperature reading for this weather station. It
+    // will be used in `find_next_temp_reading` and later set to the start of
+    // the next line.
+    self.batch_offset = semicolon_offset + 1;
+    // If the semicolon character is the last character of this batch,
+    // preemptively fetch the next batch of `BYTES_PER_BATCH` bytes.
+    if semicolon_offset == BYTES_PER_BATCH as u32 - 1 {
       if !self.read_next_assuming_available_if_single_thread() {
         return None;
       }
-      self.cur_offset = 0;
+      self.batch_offset = 0;
     }
 
     debug_assert!(
@@ -222,32 +228,37 @@ impl<'a> Scanner<'a> {
     Some(station_name)
   }
 
+  /// Reads the next batch of characters from the file for a temperature
+  /// reading without a delimiting newline character in the current batch.
+  /// This method simply calls `read_next_assuming_available_if_single_thread`
+  /// and sets `cur_offset` to the offset of the newline character read in from
+  /// the new batch.
   #[must_use]
-  fn refresh_buffer_for_trailing_temp(&mut self) -> bool {
+  fn refresh_batch_for_trailing_temp(&mut self) -> bool {
     if !self.read_next_assuming_available_if_single_thread() {
       return false;
     }
 
     debug_assert!(self.newline_mask != 0);
     let newline_offset = self.newline_mask.trailing_zeros();
-    self.cur_offset = newline_offset + 1;
-    debug_assert!(self.cur_offset < BYTES_PER_BUFFER as u32);
+    self.batch_offset = newline_offset + 1;
+    debug_assert!(self.batch_offset < BYTES_PER_BATCH as u32);
     true
   }
 
   fn parse_temp_from_copied_buffer(&mut self, start_offset: u32) -> Option<TemperatureReading> {
-    debug_assert!(BYTES_PER_BUFFER >= std::mem::size_of::<u64>());
-    const TMP_OFFSET: usize = BYTES_PER_BUFFER - std::mem::size_of::<u64>();
+    debug_assert!(BYTES_PER_BATCH >= std::mem::size_of::<u64>());
+    const TMP_OFFSET: usize = BYTES_PER_BATCH - std::mem::size_of::<u64>();
     debug_assert!(
-      (TMP_OFFSET..BYTES_PER_BUFFER).contains(&(start_offset as usize)),
-      "{TMP_OFFSET}..={BYTES_PER_BUFFER} does not contain {start_offset}"
+      (TMP_OFFSET..BYTES_PER_BATCH).contains(&(start_offset as usize)),
+      "{TMP_OFFSET}..={BYTES_PER_BATCH} does not contain {start_offset}"
     );
 
     let mut temp_storage = [0u64; 2];
     temp_storage[0] = unsafe { *(self.buffer.as_ptr().byte_add(TMP_OFFSET) as *const u64) };
 
     if self.newline_mask == 0 {
-      if !self.refresh_buffer_for_trailing_temp() {
+      if !self.refresh_batch_for_trailing_temp() {
         return None;
       }
       temp_storage[1] = unsafe { *(self.buffer.as_ptr() as *const u64) };
@@ -261,7 +272,7 @@ impl<'a> Scanner<'a> {
   }
 
   fn find_next_temp_reading(&mut self) -> Option<TemperatureReading> {
-    let start_offset = self.cur_offset;
+    let start_offset = self.batch_offset;
     let temp_start_ptr = self.offset_to_ptr(start_offset);
     let start_ptr = unsafe { self.buffer.get_unchecked(start_offset as usize..) }.as_ptr();
 
@@ -269,14 +280,14 @@ impl<'a> Scanner<'a> {
     let reading = if unlikely(unaligned_read_would_cross_page_boundary::<u64>(start_ptr)) {
       self.parse_temp_from_copied_buffer(start_offset)?
     } else {
-      if self.newline_mask == 0 && !self.refresh_buffer_for_trailing_temp() {
+      if self.newline_mask == 0 && !self.refresh_batch_for_trailing_temp() {
         return None;
       }
 
       TemperatureReading::from_raw_ptr(temp_start_ptr)
     };
 
-    self.cur_offset = self.newline_mask.pop_lsb() + 1;
+    self.batch_offset = self.newline_mask.pop_lsb() + 1;
     Some(reading)
   }
 }
