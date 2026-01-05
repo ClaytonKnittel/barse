@@ -56,3 +56,21 @@ temperature readins in that 64-byte region, meaning the locations of newlines/se
 These bitmasks are used to efficiently compute the boundaries of the station name and find the start pointer of the
 temperature reading to pass to the temperature reading parser.
 
+### Parsing Temperature Readings
+
+As stated above, tempearture readings range from -99.9 to 99.9, always with one fractional digit. This means temperature
+readings have 2001 unique values (so 2001 unique representations).
+
+The fast path for parsing temperature readings does an unaligned 8-byte load from a pointer to the start of the
+temperature reading in the file buffer. The least-significant byte of this value will contain the ASCII encoding of the
+first character of the temperature reading, and so on up to the newline character, and beyond (including the first few
+bytes of the weather station name on the following line, e.g. garbage).
+
+To remove the garbage bytes following the temperature reading, we can check particular bytes in the `u64` value for the
+newline character, and `cmov` a bitmask depending on where the newline character is. Then by masking the value with this
+bitmask, we will only be left with characters which are consistent for that particular temperature value regardless of
+where it apperas in the file[^temp_mask].
+
+[^temp_mask]: With a clever observation, you can get away with only one conditional move when constructing this mask.
+  See `TemperatureReading::u64_encoding_to_self`.
+
