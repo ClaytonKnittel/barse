@@ -2,6 +2,11 @@ use std::{fmt::Display, ptr::read_unaligned, str::FromStr};
 
 use crate::error::BarseError;
 
+// Min and max possible temperature readings per the spec (-99.9 degrees to
+// 99.9 degrees).
+const MIN_TEMP: i16 = -999;
+const MAX_TEMP: i16 = 999;
+
 const PARSE_TABLE_SHIFT: u32 = 13;
 const PARSE_TABLE_SIZE: usize = 1 << PARSE_TABLE_SHIFT;
 const PARSE_MAGIC: u64 = 0xd6df3436fe286720;
@@ -9,7 +14,11 @@ const PARSE_MAGIC: u64 = 0xd6df3436fe286720;
 pub const MIN_TEMP_READING_LEN: usize = 3;
 pub const MAX_TEMP_READING_LEN: usize = 5;
 
+/// Converts an integer encoding of a temperature reading to its string
+/// representation in the file.
 const fn int_val_to_str_encoding(val: i16) -> u64 {
+  debug_assert!(val >= MIN_TEMP);
+  debug_assert!(val <= MAX_TEMP);
   let mut ascii_encoding = 0;
   let mut ascii_idx = 0;
 
@@ -49,10 +58,14 @@ const fn int_val_to_str_encoding(val: i16) -> u64 {
   ascii_encoding
 }
 
+/// Translates a temperature string value held in a u64 in little endian order
+/// to the index in the parse table.
 const fn parse_table_idx(float_string_encoding: u64) -> usize {
   (float_string_encoding.wrapping_mul(PARSE_MAGIC) >> (u64::BITS - PARSE_TABLE_SHIFT)) as usize
 }
 
+/// Builds a parse table which maps string encodings of temperatures to their
+/// integer representation using multiply-rightshift perfect hashing.
 const fn build_parse_table() -> [TemperatureReading; PARSE_TABLE_SIZE] {
   let mut table = [TemperatureReading::new(0); PARSE_TABLE_SIZE];
   let mut val = -999i16;
@@ -67,10 +80,16 @@ const fn build_parse_table() -> [TemperatureReading; PARSE_TABLE_SIZE] {
   table
 }
 
+/// Precomputed table mapping string encodings of temperatures to their integer
+/// representations.
 const PARSE_TABLE: [TemperatureReading; PARSE_TABLE_SIZE] = build_parse_table();
 
+/// Represents a temperature reading from the input file, ranging from -99.9 to
+/// 99.9 (2001 possible values).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TemperatureReading {
+  /// Fixed-point representation of the temperature reading, i.e. 10 *
+  /// temperature reading.
   reading: i16,
 }
 
@@ -79,6 +98,8 @@ impl TemperatureReading {
     Self { reading }
   }
 
+  /// Builds a temperature reading from a temperature string encoding read
+  /// directly from the file.
   pub fn from_encoding(encoding: u64) -> Self {
     Self::u64_encoding_to_self(encoding)
   }
