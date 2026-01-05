@@ -60,9 +60,9 @@ from the file.
 
 ^ Pointer to buffer (points to the start of the current batch)
 
-    semicolon_mask: 0x..._02_00 (semicolon at index 9)
-    newline_mask: 0x..._20_00 (newlines at index 13, noting that the newline at index 2 is not in the mask (we have already processed it)
-    cur_offset: 3 (the next line to process starts at byte offset 3 in the current batch
+    semicolon_mask: 0x..._02_00 - semicolon at index 9
+    newline_mask:   0x..._20_00 - newlines at index 13, noting that the newline at index 2 is not in the mask (we have already processed it)
+    cur_offset:     3           - the next line to process starts at byte offset 3 in the current batch
 
 The bitmasks are constructed directly from the file buffer using two `vpmov` reads into 32-byte `ymm` registers,
 followed by `vpcmpeqb + vpmovmskb` on each. These masks are retained and used to efficiently compute the boundaries of
