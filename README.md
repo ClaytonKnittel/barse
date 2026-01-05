@@ -54,14 +54,14 @@ The scanner holds a pointer to the start of the current 64-byte batch in view, t
 semicolon/newline characters in the batch, and the offset within the batch of the start of the next line to be processed
 from the file.
 
-#### For example:
+#### For example: a batch from the middle of a file
 | b'.' | b'7' | b'\n' | b'D' | b'e' | b'n' | b'v' | b'e' | b'r' | b';' | b'8' | b'.' | b'3' | b'\n' | b'S' | b'a' | b'n' | ... |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
 ^ Pointer to buffer (points to the start of the current batch)
 
-    semicolon_mask: 0x..._00_40 (semicolon at index 6)
-    newline_mask: 0x..._04_00 (newline at index 10)
+    semicolon_mask: 0x..._02_00 (semicolon at index 9)
+    newline_mask: 0x..._20_00 (newlines at index 13, noting that the newline at index 2 is not in the mask (we have already processed it)
     cur_offset: 3 (the next line to process starts at byte offset 3 in the current batch
 
 The bitmasks are constructed directly from the file buffer using two `vpmov` reads into 32-byte `ymm` registers,
