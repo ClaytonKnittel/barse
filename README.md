@@ -15,7 +15,7 @@ These numbers were collected on my i9-13900K CPU with an NVMe SSD on random inpu
 
 | Features | Average total walltime |
 |-----------------|------------------------|
-| none | 5.00 s |
+| none (single-threaded) | 5.00 s |
 | "multithreaded" (32 cores) | 630 ms |
 
 ## Implementation Details
