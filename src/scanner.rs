@@ -1,4 +1,4 @@
-use std::{hint::unreachable_unchecked, ptr::read_unaligned, slice};
+use std::{hint::unreachable_unchecked, slice};
 
 use crate::{
   temperature_reading::{TemperatureReading, MAX_TEMP_READING_LEN},

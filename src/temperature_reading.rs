@@ -1,6 +1,4 @@
-use std::{fmt::Display, ptr::read_unaligned, str::FromStr};
-
-use crate::error::BarseError;
+use std::{fmt::Display, ptr::read_unaligned};
 
 // Min and max possible temperature readings per the spec (-99.9 degrees to
 // 99.9 degrees).
@@ -148,32 +146,6 @@ impl TemperatureReading {
     // Look up the parsed temperature reading from a precomputed lookup table.
     unsafe { *PARSE_TABLE.get_unchecked(parse_table_idx(val)) }
   }
-
-  #[cfg(test)]
-  fn parse_float_manual(s: &str) -> Self {
-    let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
-    let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
-    if s.as_bytes()[0] == b'-' {
-      ones = -ones;
-    }
-    Self {
-      reading: tens * 10 + ones,
-    }
-  }
-
-  fn parse_float_magic(s: &str) -> Self {
-    Self::from_raw_ptr(s.as_ptr())
-  }
-}
-
-impl FromStr for TemperatureReading {
-  type Err = BarseError;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    debug_assert!((MIN_TEMP_READING_LEN..=MAX_TEMP_READING_LEN).contains(&s.len()));
-    debug_assert_eq!(s.as_bytes()[s.len() - 2], b'.');
-    Ok(Self::parse_float_magic(s))
-  }
 }
 
 impl Display for TemperatureReading {
@@ -202,6 +174,19 @@ mod tests {
     format!("{sign}{tens}.{ones}")
   }
 
+  fn parse_temp_reading_simple(s: &str) -> TemperatureReading {
+    let tens: i16 = unsafe { s[..s.len() - 2].parse().unwrap_unchecked() };
+    let mut ones = (s.as_bytes()[s.len() - 1] - b'0') as i16;
+    if s.as_bytes()[0] == b'-' {
+      ones = -ones;
+    }
+    TemperatureReading::new(tens * 10 + ones)
+  }
+
+  fn parse_temp_reading_magic(s: &str) -> TemperatureReading {
+    TemperatureReading::from_raw_ptr(s.as_ptr())
+  }
+
   #[test]
   fn test_int_val_to_str_encoding() {
     for val in -999..=999 {
@@ -216,8 +201,7 @@ mod tests {
       let as_str =
         str::from_utf8(unsafe { slice::from_raw_parts(bytes.as_ptr(), first_zero_byte) }).unwrap();
 
-      let temp_reading =
-        TemperatureReading::parse_float_manual(as_str.strip_suffix('\n').unwrap_or(as_str));
+      let temp_reading = parse_temp_reading_simple(as_str.strip_suffix('\n').unwrap_or(as_str));
       assert_eq!(temp_reading.reading(), val);
     }
   }
@@ -237,8 +221,8 @@ mod tests {
       let to_parse = s.strip_suffix("\nab\n").unwrap();
       println!("Parsing {to_parse}");
       assert_eq!(
-        TemperatureReading::parse_float_magic(to_parse),
-        TemperatureReading::parse_float_manual(to_parse),
+        parse_temp_reading_magic(to_parse),
+        parse_temp_reading_simple(to_parse),
         "Parsing {to_parse}"
       );
     }
