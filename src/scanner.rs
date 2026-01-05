@@ -242,15 +242,11 @@ impl<'a> Scanner<'a> {
       temp_storage[1] = unsafe { *(self.buffer.as_ptr() as *const u64) };
     }
 
-    let encoding = unsafe {
-      read_unaligned(
-        temp_storage
-          .as_ptr()
-          .byte_add(start_offset as usize - TMP_OFFSET),
-      )
-    };
-
-    Some(TemperatureReading::from_encoding(encoding))
+    Some(TemperatureReading::from_raw_ptr(unsafe {
+      temp_storage
+        .as_ptr()
+        .byte_add(start_offset as usize - TMP_OFFSET) as *const u8
+    }))
   }
 
   fn find_next_temp_reading(&mut self) -> Option<TemperatureReading> {

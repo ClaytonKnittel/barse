@@ -7,11 +7,21 @@ use crate::error::BarseError;
 const MIN_TEMP: i16 = -999;
 const MAX_TEMP: i16 = 999;
 
+/// The log2 size of the temperature parse table, i.e. the number of bits
+/// necessary for there to be no collisions in the perfect hashing scheme.
 const PARSE_TABLE_SHIFT: u32 = 13;
+/// The number of entries in the temperature reading parse table.
 const PARSE_TABLE_SIZE: usize = 1 << PARSE_TABLE_SHIFT;
+/// A magic number found from `examples/temp_parse.rs` which, under
+/// multiplication, maps each possible temperature string u64 encoding to a u64
+/// value with unique high 13 bits.
 const PARSE_MAGIC: u64 = 0xd6df3436fe286720;
 
+/// The fewest number of bytes possible in a valid temperature string encoding
+/// (e.g. X.X).
 pub const MIN_TEMP_READING_LEN: usize = 3;
+/// The highest number of bytes possible in a valid temperature string encoding
+/// (e.g. -XX.X).
 pub const MAX_TEMP_READING_LEN: usize = 5;
 
 /// Converts an integer encoding of a temperature reading to its string
@@ -98,14 +108,8 @@ impl TemperatureReading {
     Self { reading }
   }
 
-  /// Builds a temperature reading from a temperature string encoding read
-  /// directly from the file.
-  pub fn from_encoding(encoding: u64) -> Self {
-    Self::u64_encoding_to_self(encoding)
-  }
-
   pub fn from_raw_ptr(str_ptr: *const u8) -> Self {
-    let encoding = unsafe { read_unaligned(str_ptr as *const u64) };
+    let encoding = unsafe { read_unaligned(str_ptr as *const u64) }.to_le();
     Self::u64_encoding_to_self(encoding)
   }
 
@@ -113,21 +117,35 @@ impl TemperatureReading {
     self.reading
   }
 
+  /// Converts the string encoding of a temperature reading read directly from
+  /// the file in little-endian order to a TemperatureReading. `encoding` is
+  /// expected to contain a newline character (`b'\n'`) at some byte index
+  /// 3 - 5, since temperature readings are always proceeded by a newline
+  /// character.
   fn u64_encoding_to_self(encoding: u64) -> Self {
-    let mask = if encoding.to_ne_bytes()[MIN_TEMP_READING_LEN] == b'\n' {
+    let mask = if encoding.to_le_bytes()[3] == b'\n' {
+      // If the character at index 3 in `encoding` is a newline, mask off byte
+      // indices 4 - 7 since those may contain arbitrary values from the next
+      // line of the file. I have chosen to keep the newline character in
+      // `encoding` for consistency with the other branch.
       0x0000_0000_ffff_ffff
     } else {
+      // Otherwise, either byte index 4 or 5 contains a newline character.
       debug_assert!(
-        encoding.to_ne_bytes()[4] == b'\n'
-          || encoding.to_ne_bytes()[5] == b'\n'
-          || (encoding >> 40) == 0,
+        encoding.to_le_bytes()[4] == b'\n' || encoding.to_le_bytes()[5] == b'\n',
         "Encoding: {encoding:016x}, newline = {:02x}",
         b'\n'
       );
+      // In this case, we unconditionally keep the first 5 characters to avoid
+      // a branch. For 4-byte temperature readings, this will include the
+      // trailing newline, and for 5-byte readings it will exactly encompass
+      // all 5 bytes.
       0x0000_00ff_ffff_ffff
     };
+    // `val` is a unique integer value for each possible temperature reading.
     let val = encoding & mask;
 
+    // Look up the parsed temperature reading from a precomputed lookup table.
     unsafe { *PARSE_TABLE.get_unchecked(parse_table_idx(val)) }
   }
 
