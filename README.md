@@ -71,6 +71,17 @@ newline character, and `cmov` a bitmask depending on where the newline character
 bitmask, we will only be left with characters which are consistent for that particular temperature value regardless of
 where it apperas in the file[^temp_mask].
 
+Now that we have a 1-1 mapping from temperature readings to the 8-byte value constructed above, we can find a
+multiply-rightshift perfect hash offline. The idea is to essentially search for a magic number which, when multiplied by
+the value constructed by reading the temperature ASCII encoding directly from the file buffer, gives a unique value in
+the top `N` bits across all 2001 possible temperature encodings. We ideally want `N` to be as small as possible.
+
+Once we have this magic number, we can construct a lookup table of size `2 ^ N` at compile time, using those top `N`
+bits as the index for an encoding. The lookup table will contain pre-constructed temperature readings (e.g. `i16`
+values).
+
+This algorithm has ~18 cycles of latency on my Intel Raptorlake CPU: [godbolt](https://godbolt.org/z/nqs33nq8Y).
+
 [^temp_mask]: With a clever observation, you can get away with only one conditional move when constructing this mask.
   See `TemperatureReading::u64_encoding_to_self`.
 
