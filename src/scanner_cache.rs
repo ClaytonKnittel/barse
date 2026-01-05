@@ -21,7 +21,7 @@ fn find_zero_bytes(val: u128) -> u64 {
   let lower_half = y as u64;
   let upper_half = (y >> 64) as u64;
 
-  (compress_msb(lower_half) + (compress_msb(upper_half) << 8)) as u64
+  compress_msb(lower_half) + (compress_msb(upper_half) << 8)
 }
 
 fn char_mask(cache: u128, needle: u8) -> u64 {
