@@ -64,7 +64,7 @@ readings have 2001 unique values (so 2001 unique representations).
 The fast path for parsing temperature readings does an unaligned 8-byte load from a pointer to the start of the
 temperature reading in the file buffer. The least-significant byte of this value will contain the ASCII encoding of the
 first character of the temperature reading, and so on up to the newline character, and beyond (including the first few
-bytes of the weather station name on the following line, e.g. garbage).
+bytes of the weather station name on the following line, i.e. garbage).
 
 To remove the garbage bytes following the temperature reading, we can check particular bytes in the `u64` value for the
 newline character, and `cmov` a bitmask depending on where the newline character is. Then by masking the value with this
