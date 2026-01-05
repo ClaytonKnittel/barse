@@ -80,21 +80,24 @@ first character of the temperature reading, and so on up to the newline characte
 bytes of the weather station name on the following line, i.e. garbage).
 
 #### For example:
-| b'r' | b';' | b'8' | b'.' | b'3' | b'\n' | b'S' | ... |
-|---|---|---|---|---|---|---|---|
+| ... | b'r' | b';' | b'8' | b'.' | b'3' | b'\n' | b'S' | ... |
+|---|---|---|---|---|---|---|---|---|
 
-`                ^ unaligned load address                `
+`                     ^ unaligned load address                     `
 
     // ASCII values of temperature reading digits in little-endian order:
-    //                   S  \n 3  .  8
-    temp_encoding: 0x..._53_0A_33_2E_38
+    //               _  n  a  S  \n 3  .  8
+    temp_encoding: 0x20_6E_61_53_0A_33_2E_38
 
-To remove the garbage bytes following the temperature reading, we can check particular bytes in the `u64` value for the
-newline character, and `cmov` a bitmask depending on where the newline character is. Then by masking the value with this
-bitmask, we will only be left with characters which are consistent for that particular temperature value regardless of
-where it apperas in the file[^temp_mask].
+To remove the garbage bytes following the temperature reading ('S' and above in the example), we can check particular
+bytes in the `u64` value for the newline character, and `cmov` a bitmask depending on where the newline character is.
+Then by masking the value with this bitmask, we will only be left with characters which are consistent for that
+particular temperature value regardless of where it appears in the file[^temp_mask].
 
-Now that we have a 1-1 mapping from temperature readings to the 8-byte value constructed above, we can find a
+    mask:                 0x00_00_00_00_ff_ff_ff_ff - determined by seeing a newline character in byte index 3 of temp_encoding
+    masked_temp_encoding: 0x00_00_00_00_0A_33_2E_38
+
+Now that we have a 1-1 mapping from temperature readings to 8-byte values (as constructed above), we can find a
 multiply-rightshift perfect hash offline. The idea is to essentially search for a magic number which, when multiplied by
 the value constructed by reading the temperature ASCII encoding directly from the file buffer, gives a unique value in
 the top `N` bits across all 2001 possible temperature encodings. We ideally want `N` to be as small as possible.
@@ -104,6 +107,11 @@ bits as the index for an encoding. The lookup table will contain pre-constructed
 values).
 
 I was able to find a magic number for `N = 13` (e.g. an 8192-entry table) using `examples/temp_parse.rs`.
+
+    masked_temp_encoding:                      0x00_00_00_00_0A_33_2E_38
+    magic:                                     0xD6_DF_34_36_FE_28_67_20
+    product:                                   0xA9_17_83_C6_A6_BE_4F_00
+    right-shift 51 bits (lookup table index):  0x00_00_00_00_00_00_15_22 (base 10: 5410)
 
 This algorithm has ~18 cycles of latency on my Intel Raptorlake CPU: [godbolt](https://godbolt.org/z/nqs33nq8Y).
 
