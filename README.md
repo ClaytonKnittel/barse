@@ -50,11 +50,9 @@ semicolon/newline characters in the 64-byte region, and the offset within the cu
 start of the next line.
 
 The bitmasks are constructed directly from the file buffer using two `vpmov` reads into 32-byte `ymm` registers,
-followed by `vpcmpeqb + vpmovmskb` on each. These masks are retained and used to construct all station names +
-temperature readings in that 64-byte region, meaning the locations of newlines/semicolons are computed only once.
-
-These bitmasks are used to efficiently compute the boundaries of the station name and find the start pointer of the
-temperature reading to pass to the temperature reading parser.
+followed by `vpcmpeqb + vpmovmskb` on each. These masks are retained and used to efficiently compute the boundaries of
+all station names + temperature readings in that 64-byte region. The locations of newlines/semicolons are computed only
+once.
 
 ### Parsing Temperature Readings - Perfect Hashing
 
