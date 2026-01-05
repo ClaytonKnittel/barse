@@ -5,7 +5,7 @@ My submission to the [one billion row challenge](https://github.com/gunnarmorlin
 ## Overview
 
 My submission conforms to the rules laid out in [ClaytonKnittel/1brc](https://github.com/ClaytonKnittel/1brc). It
-~should~ compile and run on any Unix system, though some optimizations are only available on Linux with an Intel CPU
+_should_ compile and run on any Unix system, though some optimizations are only available on Linux with an Intel CPU
 that supports the AVX2 feature.
 
 ## Performance
