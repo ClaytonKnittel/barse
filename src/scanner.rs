@@ -2,7 +2,7 @@ use std::{hint::unreachable_unchecked, slice};
 
 use crate::{
   temperature_reading::{TemperatureReading, MAX_TEMP_READING_LEN},
-  util::{unaligned_read_would_cross_page_boundary, unlikely},
+  util::{unaligned_read_would_cross_page_boundary, unlikely, BitVector},
 };
 
 #[cfg(not(target_feature = "avx2"))]
@@ -101,6 +101,9 @@ impl<'a> Scanner<'a> {
     }
   }
 
+  /// Reads in the next `BYTES_PER_BUFFER` bytes from the buffer and updates
+  /// the semicolon/newline bitmasks. This method assumes that we are not at
+  /// the end of the file.
   fn read_next_assuming_available(&mut self) {
     debug_assert!(self.buffer.len() > BYTES_PER_BUFFER);
     self.buffer = unsafe { self.buffer.get_unchecked(BYTES_PER_BUFFER..) };
@@ -130,6 +133,9 @@ impl<'a> Scanner<'a> {
     true
   }
 
+  /// Reads the next `BYTES_PER_BUFFER` bytes from the buffer, updating the
+  /// internal state of `self` and returning `true` if there were more bytes to
+  /// read, or returning `false` if EOF was reached.
   #[must_use]
   fn read_next(&mut self) -> bool {
     debug_assert!(!self.buffer.is_empty());
@@ -145,8 +151,11 @@ impl<'a> Scanner<'a> {
     unsafe { self.buffer.get_unchecked(offset as usize..) }.as_ptr()
   }
 
+  /// Reads bytes from the buffer into the cache while no newline characters
+  /// are in the cache, returning `true` if a newline character was eventually
+  /// found. `false` indicates EOF was reached.
   #[must_use]
-  fn find_next_semicolon(&mut self) -> bool {
+  fn read_until_next_semicolon(&mut self) -> bool {
     if self.semicolon_mask != 0 {
       return true;
     } else if !self.read_next() {
@@ -174,9 +183,12 @@ impl<'a> Scanner<'a> {
     true
   }
 
+  /// Finds and returns a `str` spanning the name of the weather station on the
+  /// next line to process. Returns `None` if EOF was reached.
   fn find_next_station_name(&mut self) -> Option<&'a str> {
+    // Pointer to the start of the next station name.
     let station_start = self.offset_to_ptr(self.cur_offset);
-    if !self.find_next_semicolon() {
+    if !self.read_until_next_semicolon() {
       return None;
     }
 
@@ -184,8 +196,7 @@ impl<'a> Scanner<'a> {
       self.semicolon_mask != 0,
       "Expected non-empty semicolon mask after refreshing buffers in iteration"
     );
-    let semicolon_offset = self.semicolon_mask.trailing_zeros();
-    self.semicolon_mask &= self.semicolon_mask - 1;
+    let semicolon_offset = self.semicolon_mask.pop_lsb();
 
     let station_end = self.offset_to_ptr(semicolon_offset);
     let station_name_slice = unsafe {
@@ -265,9 +276,7 @@ impl<'a> Scanner<'a> {
       TemperatureReading::from_raw_ptr(temp_start_ptr)
     };
 
-    self.cur_offset = self.newline_mask.trailing_zeros() + 1;
-    self.newline_mask &= self.newline_mask - 1;
-
+    self.cur_offset = self.newline_mask.pop_lsb() + 1;
     Some(reading)
   }
 }
