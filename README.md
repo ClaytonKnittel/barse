@@ -80,6 +80,8 @@ Once we have this magic number, we can construct a lookup table of size `2 ^ N` 
 bits as the index for an encoding. The lookup table will contain pre-constructed temperature readings (e.g. `i16`
 values).
 
+I was able to find a magic number for `N = 13` (e.g. an 8192-entry table) using `examples/temp_parse.rs`.
+
 This algorithm has ~18 cycles of latency on my Intel Raptorlake CPU: [godbolt](https://godbolt.org/z/nqs33nq8Y).
 
 [^temp_mask]: With a clever observation, you can get away with only one conditional move when constructing this mask.
