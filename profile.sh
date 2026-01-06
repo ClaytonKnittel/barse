@@ -1,6 +1,6 @@
 #!/usr/bin/sh
 
-# usage: ./profile.sh <binary> [args...] > onoro.svg
+# usage: ./profile.sh <binary> [args...]
 
 set -e
 

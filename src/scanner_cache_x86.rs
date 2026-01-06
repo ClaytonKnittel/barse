@@ -2,7 +2,7 @@ use std::arch::x86_64::{
   __m256i, _mm256_cmpeq_epi8, _mm256_load_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
 };
 
-pub const BYTES_PER_BUFFER: usize = 64;
+pub const BYTES_PER_BATCH: usize = 64;
 
 #[target_feature(enable = "avx2")]
 fn char_mask(cache: __m256i, needle: u8) -> u32 {

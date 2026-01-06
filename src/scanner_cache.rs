@@ -1,4 +1,4 @@
-pub const BYTES_PER_BUFFER: usize = 16;
+pub const BYTES_PER_BATCH: usize = 16;
 
 pub fn read_next_from_buffer(buffer: &[u8]) -> (u64, u64) {
   let cache = unsafe { *(buffer.as_ptr() as *const u128) };
@@ -21,7 +21,7 @@ fn find_zero_bytes(val: u128) -> u64 {
   let lower_half = y as u64;
   let upper_half = (y >> 64) as u64;
 
-  (compress_msb(lower_half) + (compress_msb(upper_half) << 8)) as u64
+  compress_msb(lower_half) + (compress_msb(upper_half) << 8)
 }
 
 fn char_mask(cache: u128, needle: u8) -> u64 {

@@ -32,3 +32,21 @@ pub trait HasIter<'a> {
 
   fn iter(&'a self) -> impl Iterator<Item = Self::Item>;
 }
+
+pub trait BitVector {
+  /// Returns the index of the least-significant 1-bit, and clears that bit
+  /// from `self`. Expects `self != 0`.
+  fn pop_lsb(&mut self) -> u32;
+}
+
+impl BitVector for u64 {
+  fn pop_lsb(&mut self) -> u32 {
+    debug_assert!(*self != 0);
+    if *self == 0 {
+      unsafe { std::hint::unreachable_unchecked() };
+    }
+    let offset = self.trailing_zeros();
+    *self &= *self - 1;
+    offset
+  }
+}
