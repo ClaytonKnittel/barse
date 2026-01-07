@@ -36,6 +36,7 @@ impl<const SIZE: usize> StringTable<SIZE> {
   pub fn find_entry_index(&self, station: &str) -> usize {
     let idx = self.station_index(station);
     let entry = self.entry_at(idx);
+    let entry_len = entry.len();
     if entry.eq_or_initialize(station) {
       idx
     } else {

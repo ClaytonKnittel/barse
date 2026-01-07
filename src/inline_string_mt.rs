@@ -49,8 +49,8 @@ impl InlineString {
     }
   }
 
-  pub fn initialized(&self) -> bool {
-    let len = self.len.load(AtomicOrdering::Acquire);
+  pub fn initialized(&self, len: u32) -> bool {
+    debug_assert_eq!(len, self.len() as u32);
     len != 0 && len != Self::INITIALIZING_RESERVED_LEN
   }
 
@@ -94,8 +94,10 @@ impl InlineString {
     }
   }
 
-  pub fn eq_or_initialize(&self, station: &str) -> bool {
-    if likely(self.initialized()) {
+  pub fn eq_or_initialize(&self, station: &str, len: u32) -> bool {
+    debug_assert_eq!(len, self.len() as u32);
+
+    if likely(self.initialized(len)) {
       return likely(self.eq_foreign_str(station));
     }
 
